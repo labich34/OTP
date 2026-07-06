@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Planning Tech" />
+<title>Planning Technicien — La Côte</title>
+
+<!-- Polices : IBM Plex (registre "atelier / opérations") + IBM Plex Mono pour les horaires -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --ink:#26303f;         /* texte principal — ardoise foncé, lisible (pas noir pur) */
+  --ink-soft:#5f6b7d;    /* texte secondaire */
+  --paper:#d4e9f7;       /* fond appli — bleu ciel */
+  --surface:#f8f2e5;     /* cartes — ivoire chaud (plus du tout blanc) */
+  --line:#e6e0d2;        /* filets doux */
+  --line-strong:#d5ccbb;
+  --brand:#1c8f81;       /* teal frais et clair */
+  --brand-ink:#157266;
+  --free:#2a9d63;        /* disponible — vert frais */
+  --free-bg:#e6f5ec;
+  --busy:#cc3b3b;        /* occupé — rouge */
+  --busy-bg:#fce3e3;
+  --req:#c17d14;         /* demande en attente — ambre */
+  --req-bg:#fdf2dc;
+  --prio:#e0603f;        /* prioritaire Thibaut — corail chaleureux */
+  --prio-bg:#fce9e2;
+  --header-1:#eaf6f2;    /* en-tête clair (teal très pâle) */
+  --header-2:#dcefe9;
+  --radius:14px;
+  --radius-sm:9px;
+  --shadow:0 1px 2px rgba(38,48,63,.05), 0 8px 24px -14px rgba(38,48,63,.22);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  color:var(--ink); background:var(--paper);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* ---------- En-tête ---------- */
+header.app{
+  position:sticky; top:0; z-index:30;
+  background:linear-gradient(180deg,var(--header-1),var(--header-2)); color:var(--ink);
+  padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;
+  border-bottom:1px solid var(--line);
+  box-shadow:0 6px 18px -14px rgba(38,48,63,.4);
+}
+.app-row{display:flex; align-items:center; gap:12px; max-width:1180px; margin:0 auto}
+.brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px}
+.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--free);box-shadow:0 0 0 4px rgba(31,138,91,.25)}
+.brand small{display:block;font-weight:500;font-size:11px;color:var(--ink-soft);letter-spacing:.3px}
+.spacer{flex:1}
+.role-pill{
+  display:inline-flex;align-items:center;gap:6px;background:rgba(28,143,129,.10);
+  border:1px solid rgba(28,143,129,.28); color:var(--brand-ink); padding:7px 11px;border-radius:999px;
+  font-size:13px;font-weight:600;cursor:pointer
+}
+.role-pill:hover{background:rgba(28,143,129,.18)}
+.role-switch{display:inline-flex;gap:8px}
+.role-pill.active{background:var(--brand);border-color:var(--brand);color:#fff}
+.role-pill.active:hover{background:var(--brand-ink)}
+
+/* ---------- Barre outils ---------- */
+.toolbar{
+  max-width:1180px;margin:0 auto;padding:14px 16px 4px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap
+}
+.week-nav{display:flex;align-items:center;gap:6px}
+.btn{
+  font:inherit;font-weight:600;font-size:14px;cursor:pointer;
+  border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+  padding:9px 13px;border-radius:var(--radius-sm);line-height:1;transition:.15s
+}
+.btn:hover{border-color:var(--ink-soft)}
+.btn:active{transform:translateY(1px)}
+.btn.icon{padding:9px 12px}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.primary:hover{background:var(--brand-ink)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--ink-soft)}
+.btn.danger{color:var(--prio);border-color:var(--prio)}
+.btn.small{padding:6px 10px;font-size:13px}
+.week-label{font-weight:700;font-size:15px;min-width:150px;text-align:center}
+.week-label span{display:block;font-size:11px;font-weight:500;color:var(--ink-soft)}
+
+.site-select{position:relative}
+.site-select select{
+  font:inherit;font-weight:600;font-size:14px;padding:9px 34px 9px 12px;border-radius:var(--radius-sm);
+  border:1px solid var(--line-strong);background:var(--surface);appearance:none;cursor:pointer;color:var(--ink)
+}
+.site-select::after{content:"▾";position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--ink-soft);pointer-events:none}
+
+/* ---------- Légende ---------- */
+.legend{max-width:1180px;margin:6px auto 0;padding:0 16px;display:flex;gap:14px;flex-wrap:wrap;color:var(--ink-soft);font-size:12.5px}
+.legend b{display:inline-flex;align-items:center;gap:6px;font-weight:500;color:var(--ink-soft)}
+.chip{width:11px;height:11px;border-radius:3px;display:inline-block}
+.chip.free{background:var(--free)} .chip.busy{background:var(--busy)}
+.chip.req{background:var(--req)} .chip.prio{background:var(--prio)}
+
+/* ---------- Grille semaine ---------- */
+.week{
+  max-width:1180px;margin:14px auto 40px;padding:0 12px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start
+}
+.day{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;box-shadow:var(--shadow)
+}
+.day.today{border-color:#e8ac52;background:#fdf3dd;box-shadow:0 0 0 1px rgba(232,172,82,.35), var(--shadow)}
+.day-head{
+  display:flex;align-items:baseline;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);
+  background:linear-gradient(var(--surface),#f2ead6)
+}
+.day.today .day-head{background:linear-gradient(#fdeec7,#fbe4b1);border-bottom-color:#f0d194}
+.day.today .badge{color:#9a6410;background:#fbe4b1}
+.day-head .dname{font-weight:700;font-size:15px;text-transform:capitalize}
+.day-head .ddate{font-size:12.5px;font-weight:700;color:var(--ink)}
+.day-head .badge{margin-left:auto;font-size:11px;font-weight:700;color:var(--brand);background:var(--free-bg);
+  padding:3px 8px;border-radius:999px}
+.slots{padding:8px}
+.day-site{margin:2px 14px 8px;padding:6px 10px;border-radius:8px;font-size:12px;
+  background:rgba(28,143,129,.10);color:var(--brand-ink);border:1px solid rgba(28,143,129,.25)}
+.chip-move{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;
+  background:var(--req-bg);color:var(--req);border:1px solid #f0dcab;border-radius:999px;padding:1px 7px;margin-left:6px}
+.reco{color:var(--free);font-weight:600}
+.info-auto{background:#eaf3ff;border:1px solid #cfe0f7;color:#2c4a6e;border-radius:10px;
+  padding:8px 10px;font-size:12px;line-height:1.35;margin-bottom:12px}
+.row{
+  display:flex;gap:10px;align-items:stretch;padding:9px 8px;border-radius:var(--radius-sm);
+  border:1px solid transparent
+}
+.row .time{width:96px;flex:none;color:var(--ink-soft);font-size:12.5px;padding-top:1px}
+.row .body{flex:1;min-width:0}
+.row .title{font-weight:600;font-size:14px;line-height:1.25}
+.row .meta{font-size:12px;color:var(--ink-soft);margin-top:2px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;margin-right:6px}
+
+/* états */
+.row.free{cursor:pointer;background:var(--free-bg);border-color:#c9e8d5}
+.row.free:hover{background:#d8f0e0;border-color:#a6d7bc}
+.row.free .title{color:var(--free)}
+.row.busy{background:var(--busy-bg);border-color:#f3c3c3}
+.row.busy .marker{width:4px;border-radius:3px;background:var(--busy);flex:none}
+.row.req{background:var(--req-bg);border-color:#f0dcab}
+.row.req .marker{background:var(--req)}
+.row.prio{background:var(--prio-bg);border-color:#f4c9bd}
+.row.prio .marker{background:var(--prio)}
+.row.confirmed .marker{background:var(--brand)}
+.state{font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+.state.req{color:var(--req)} .state.prio{color:var(--prio)} .state.confirmed{color:var(--brand)}
+.admin-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.empty-day{padding:18px 14px;color:var(--ink-soft);font-size:13px;text-align:center}
+
+/* ---------- Bandeau demandes (admin) ---------- */
+.inbox{max-width:1180px;margin:0 auto;padding:0 16px}
+.inbox-card{
+  background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--req);
+  border-radius:var(--radius);padding:12px 14px;margin-top:12px;box-shadow:var(--shadow)
+}
+.inbox-card.prio{border-left-color:var(--prio)}
+.inbox-card h4{margin:0 0 4px;font-size:14px}
+.inbox-card .meta{font-size:12.5px;color:var(--ink-soft)}
+.inbox-actions{display:flex;gap:8px;margin-top:10px}
+
+/* ---------- Modale ---------- */
+.overlay{position:fixed;inset:0;background:rgba(18,22,31,.55);backdrop-filter:blur(2px);
+  display:none;align-items:flex-end;justify-content:center;z-index:60}
+.overlay.open{display:flex}
+@media(min-width:640px){.overlay{align-items:center}}
+.sheet{
+  background:var(--surface);width:100%;max-width:480px;border-radius:18px 18px 0 0;
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.3);
+  max-height:92vh;overflow:auto;animation:rise .22s ease
+}
+@media(min-width:640px){.sheet{border-radius:18px;animation:pop .18s ease}}
+@keyframes rise{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+@keyframes pop{from{transform:scale(.97);opacity:.6}to{transform:none;opacity:1}}
+.sheet h3{margin:0 0 2px;font-size:18px}
+.sheet .sub{color:var(--ink-soft);font-size:13px;margin-bottom:14px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:5px}
+.field input,.field select,.field textarea{
+  width:100%;font:inherit;font-size:15px;padding:11px 12px;border:1px solid var(--line-strong);
+  border-radius:10px;background:var(--surface);color:var(--ink)
+}
+.field textarea{resize:vertical;min-height:58px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.prio-box{
+  display:flex;gap:11px;align-items:flex-start;padding:12px;border:1px dashed var(--prio);
+  background:var(--prio-bg);border-radius:12px;margin:4px 0 14px;cursor:pointer
+}
+.prio-box input{margin-top:2px;width:18px;height:18px;accent-color:var(--prio)}
+.prio-box .t{font-weight:700;color:var(--prio);font-size:14px}
+.prio-box .d{font-size:12.5px;color:#8a3b2c;margin-top:2px}
+.sheet-actions{display:flex;gap:10px;margin-top:6px}
+.sheet-actions .btn{flex:1;justify-content:center;text-align:center;padding:12px}
+.conflict{background:var(--prio-bg);border:1px solid #f4c9bd;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.conflict b{color:var(--prio)}
+.pick-list{display:flex;flex-direction:column;gap:8px;max-height:230px;overflow:auto;margin-top:6px}
+.pick{border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;gap:8px}
+.pick:hover{border-color:var(--brand);background:var(--free-bg)}
+.pick.sel{border-color:var(--brand);background:var(--free-bg);box-shadow:inset 0 0 0 1px var(--brand)}
+
+/* ---------- Toast ---------- */
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+  background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:500;
+  box-shadow:0 12px 30px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:.25s;z-index:80;max-width:90vw}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{background:var(--prio)}
+
+/* ---------- Bandeau config ---------- */
+.banner{max-width:1180px;margin:12px auto 0;padding:0 16px}
+.banner .b{background:#fff8e6;border:1px solid #f2e0a8;color:#7a5c12;border-radius:12px;
+  padding:10px 14px;font-size:13px;display:flex;gap:10px;align-items:center}
+.banner .b b{color:#7a5c12}
+
+.footer{max-width:1180px;margin:0 auto;padding:22px 16px 40px;color:var(--ink-soft);font-size:12px;text-align:center}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="app-row">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>Planning Technicien
+        <small id="brand-sub">Maintenance — Groupe La Côte</small>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <div class="role-switch">
+      <button class="role-pill" id="btnDirecteur" title="Accès directeurs — déposer une demande">Directeur</button>
+      <button class="role-pill" id="btnResponsable" title="Accès responsable — protégé par code">🔒 Responsable</button>
+    </div>
+  </div>
+</header>
+
+<div class="banner" id="demoBanner" style="display:none">
+  <div class="b">⚙️ <b>Mode démonstration</b> — données locales à cet appareil. Renseigne Supabase en haut du fichier pour le partage temps réel entre tous les sites.</div>
+</div>
+
+<div class="toolbar">
+  <div class="week-nav">
+    <button class="btn icon" id="prevWeek" aria-label="Semaine précédente">‹</button>
+    <div class="week-label" id="weekLabel">—<span id="weekSub"></span></div>
+    <button class="btn icon" id="nextWeek" aria-label="Semaine suivante">›</button>
+    <button class="btn ghost small" id="todayBtn">Aujourd'hui</button>
+  </div>
+  <span class="spacer"></span>
+  <div class="site-select">
+    <select id="siteFilter" aria-label="Filtrer par site"></select>
+  </div>
+  <button class="btn primary small" id="addBtn" style="display:none">+ Intervention</button>
+</div>
+
+<div class="legend">
+  <b><span class="chip free"></span> Créneau libre</b>
+  <b><span class="chip busy"></span> Occupé / planifié</b>
+  <b><span class="chip req"></span> Demande en attente</b>
+  <b><span class="chip prio"></span> Prioritaire (Thibaut)</b>
+</div>
+
+<div class="inbox" id="inbox"></div>
+<main class="week" id="week"></main>
+
+<div class="footer" id="footer"></div>
+
+<!-- Modale générique -->
+<div class="overlay" id="overlay">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Supabase (chargé seulement si configuré) -->
+<script>
+/* ============================================================================
+   ⚙️  CONFIGURATION  —  À PERSONNALISER (c'est la seule zone à éditer)
+   ============================================================================ */
+const CONFIG = {
+
+  /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
+  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
+  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
+
+  /* --- 2. Alertes sur ton téléphone --- */
+  //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
+  NTFY_TOPIC: "",            // ex: "fabien-planning-x7q2z"  (choisis un mot secret)
+  //  b) OU/ET un webhook n8n (email, Telegram, etc.) — laisse vide si non utilisé
+  N8N_WEBHOOK: "",           // ex: "https://ton-n8n/webhook/planning"
+
+  /* --- 3. Code d'accès à TON mode admin (les directeurs ne l'ont pas) --- */
+  ADMIN_PIN: "2468",
+
+  /* --- 4. Tes sites (renomme librement) --- */
+  SITES: ["Resto Nyon Gare", "Resto Gland", "Resto Signy", "Crèche La Côte"],
+
+  /* --- 5b. Site où tu es posté chaque jour (regroupe le travail, évite les trajets) ---
+     1=Lundi … 5=Vendredi. Mets ici ta tournée réelle.                                  */
+  BASE_SITE: { 1:"Resto Gland", 2:"Resto Nyon Gare", 3:"Resto Signy", 4:"Crèche La Côte", 5:"Resto Nyon Gare" },
+
+  /* --- 5. Horaires de travail affichés --- */
+  HOURS: { start: 7, end: 18, slotMin: 30, days: 5 }, // Lun→Ven (samedi/dimanche retirés)
+
+  /* --- 6. Ton planning RÉCURRENT (se régénère chaque semaine automatiquement) ---
+     weekday : 1=Lundi … 6=Samedi   |   heures au format "HH:MM"                  */
+  RECURRING: [
+    { site:"Resto Nyon Gare", title:"Contrôle équipements cuisine", weekday:1, start:"08:00", end:"09:30" },
+    { site:"Resto Gland",     title:"Maintenance préventive AC",     weekday:2, start:"09:00", end:"11:00" },
+    { site:"Resto Signy",     title:"Tournée technique hebdo",       weekday:3, start:"08:30", end:"10:30" },
+    { site:"Crèche La Côte",  title:"Vérif sécurité + petits travaux",weekday:4,start:"14:00", end:"16:00" },
+    { site:"Resto Nyon Gare", title:"Confirmations Safely.swiss",    weekday:5, start:"10:00", end:"11:00" },
+  ],
+};
+/* ======================= FIN DE LA ZONE À ÉDITER =========================== */
+
+const DAYS_FR = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+const SLOT = CONFIG.HOURS.slotMin;
+const supaOn = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);
+</script>
+
+<script>
+/* ------------------------------------------------------------------ Helpers */
+const $=(s,r=document)=>r.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const pad=n=>String(n).padStart(2,"0");
+const toMin=t=>{const[a,b]=t.split(":").map(Number);return a*60+b;};
+const toHM=m=>pad(Math.floor(m/60))+":"+pad(m%60);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(msg,err){const t=$("#toast");t.textContent=msg;t.className="show"+(err?" err":"");clearTimeout(t._t);t._t=setTimeout(()=>t.className="",3200);}
+
+function mondayOf(d){const x=new Date(d);const day=(x.getDay()+6)%7;x.setHours(0,0,0,0);x.setDate(x.getDate()-day);return x;}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function iso(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
+function fmtDay(d){return d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"});}
+function weekNum(d){const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dn=(x.getUTCDay()+6)%7;x.setUTCDate(x.getUTCDate()-dn+3);const f=new Date(Date.UTC(x.getUTCFullYear(),0,4));return 1+Math.round(((x-f)/864e5-3+((f.getUTCDay()+6)%7))/7);}
+
+/* --------------------------------------------------------------- État global */
+const State={
+  role:"directeur",           // "directeur" | "admin"
+  site:"__all__",
+  weekStart:mondayOf(new Date()),
+  rows:[],                    // interventions de la semaine affichée
+};
+
+/* ============================================================ COUCHE DONNÉES
+   Deux implémentations : Supabase (partagé) ou localStorage (démo).           */
+let Store;
+function makeStore(){
+  if(supaOn && !window.__supaFail && window.supabase){
+    const sb=window.supabase.createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_ANON_KEY);
+    let chan=null;
+    return {
+      mode:"supabase",
+      async list(ws){
+        const from=iso(ws), to=iso(addDays(ws,6));
+        const {data,error}=await sb.from("interventions").select("*").gte("date",from).lte("date",to);
+        if(error)throw error; return data||[];
+      },
+      async insert(r){const{data,error}=await sb.from("interventions").insert(r).select().single();if(error)throw error;return data;},
+      async update(id,p){const{error}=await sb.from("interventions").update(p).eq("id",id);if(error)throw error;},
+      async remove(id){const{error}=await sb.from("interventions").delete().eq("id",id);if(error)throw error;},
+      subscribe(cb){
+        if(chan)sb.removeChannel(chan);
+        chan=sb.channel("iv").on("postgres_changes",{event:"*",schema:"public",table:"interventions"},cb).subscribe();
+      }
+    };
+  }
+  /* -------- mode démo local -------- */
+  return {
+    mode:"demo",
+    _read(){try{return JSON.parse(localStorage.getItem("planning_iv")||"[]")}catch{return[]}},
+    _write(a){localStorage.setItem("planning_iv",JSON.stringify(a));},
+    async list(ws){const from=iso(ws),to=iso(addDays(ws,6));return this._read().filter(r=>r.date>=from&&r.date<=to);},
+    async insert(r){const a=this._read();r.id="loc_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);a.push(r);this._write(a);return r;},
+    async update(id,p){const a=this._read();const i=a.findIndex(x=>x.id===id);if(i>=0){Object.assign(a[i],p);this._write(a);}},
+    async remove(id){this._write(this._read().filter(x=>x.id!==id));},
+    subscribe(){/* pas de temps réel en démo : on re-render après chaque action */}
+  };
+}
+
+/* Génère les interventions récurrentes manquantes pour la semaine affichée */
+async function materialize(ws,existing){
+  const created=[];
+  for(const t of CONFIG.RECURRING){
+    const date=iso(addDays(ws,t.weekday-1));
+    const dup=existing.some(r=>r.source==="template"&&r.date===date&&r.start===t.start&&r.site===t.site&&r.title===t.title);
+    if(!dup){
+      const row={date,site:t.site,title:t.title,start:t.start,end:t.end,
+        status:"planned",priority:false,source:"template",requested_by:"Récurrent",notes:""};
+      try{const saved=await Store.insert(row);created.push(saved);}catch(e){console.warn(e);}
+    }
+  }
+  return created;
+}
+
+/* ------------------------------------------------------------- Notifications */
+async function notify(title,body){
+  const tasks=[];
+  if(CONFIG.NTFY_TOPIC){
+    tasks.push(fetch("https://ntfy.sh/"+CONFIG.NTFY_TOPIC,{method:"POST",
+      headers:{"Title":encodeURIComponent(title),"Tags":"wrench","Priority":"high"},body}).catch(()=>{}));
+  }
+  if(CONFIG.N8N_WEBHOOK){
+    tasks.push(fetch(CONFIG.N8N_WEBHOOK,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title,body,at:new Date().toISOString()})}).catch(()=>{}));
+  }
+  await Promise.allSettled(tasks);
+}
+
+/* =============================================================== CHARGEMENT */
+async function load(){
+  let rows=await Store.list(State.weekStart);
+  const created=await materialize(State.weekStart,rows);
+  if(created.length) rows=rows.concat(created);
+  State.rows=rows;
+  render();
+}
+
+/* ================================================================= RENDU UI */
+function visibleRows(){
+  return State.rows.filter(r=>r.status!=="cancelled" &&
+    (State.site==="__all__"||r.site===State.site));
+}
+
+function dayTimeline(dateStr){
+  const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
+  const jobs=visibleRows().filter(r=>r.date===dateStr)
+    .sort((a,b)=>toMin(a.start)-toMin(b.start));
+  const items=[]; let cur=open;
+  for(const j of jobs){
+    const s=Math.max(toMin(j.start),open), e=Math.min(toMin(j.end),close);
+    if(s>cur) items.push({free:true,start:cur,end:s});
+    items.push({free:false,job:j,start:s,end:e});
+    cur=Math.max(cur,e);
+  }
+  if(cur<close) items.push({free:true,start:cur,end:close});
+  return items;
+}
+
+/* --- Regroupement par site du jour --------------------------------------- */
+const NOON = 12*60;
+function baseSiteFor(dateStr){ return (CONFIG.BASE_SITE&&CONFIG.BASE_SITE[new Date(dateStr).getDay()])||null; }
+function isWorkday(d){ const w=d.getDay(); return w>=1 && w<=CONFIG.HOURS.days; }
+function nextWorkday(dateStr){ let x=new Date(dateStr); do{ x=addDays(x,1); }while(!isWorkday(x)); return iso(x); }
+
+// Occupation réelle d'un jour = TOUS sites confondus (Thibaut est seul)
+function busyRowsOn(dateStr){
+  return State.rows.filter(r=>r.status!=="cancelled" && r.date===dateStr && r.source!=="free")
+    .sort((a,b)=>toMin(a.start)-toMin(b.start));
+}
+function freeGapsAll(dateStr){
+  const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
+  const gaps=[]; let cur=open;
+  for(const j of busyRowsOn(dateStr)){
+    const s=Math.max(toMin(j.start),open), e=Math.min(toMin(j.end),close);
+    if(s>cur) gaps.push({start:cur,end:s});
+    cur=Math.max(cur,e);
+  }
+  if(cur<close) gaps.push({start:cur,end:close});
+  return gaps;
+}
+// 1er créneau libre de durée `dur` dans la fenêtre [wStart,wEnd), sinon null
+function findSlot(dateStr,dur,wStart,wEnd){
+  for(const g of freeGapsAll(dateStr)){
+    const s=Math.max(g.start,wStart), e=Math.min(g.end,wEnd);
+    if(e-s>=dur) return s;
+  }
+  return null;
+}
+// Placement auto : site du jour → matin ; autre site → après-midi ; journée pleine → jour suivant
+function autoPlace(dateStr,site,dur){
+  const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
+  let d=dateStr;
+  for(let k=0;k<7;k++){
+    const base = baseSiteFor(d)===site;
+    const win1 = base?[open,NOON]:[NOON,close];   // fenêtre préférée
+    const win2 = base?[NOON,close]:[open,NOON];   // repli même jour
+    let s=findSlot(d,dur,win1[0],win1[1]), pref=true;
+    if(s===null){ s=findSlot(d,dur,win2[0],win2[1]); pref=false; }
+    if(s!==null) return {date:d,start:toHM(s),base,pref,sameDay:d===dateStr};
+    d=nextWorkday(d);
+  }
+  return null;
+}
+
+function render(){
+  // en-tête semaine
+  const ws=State.weekStart, we=addDays(ws,6);
+  $("#weekLabel").firstChild.nodeValue=`${fmtDay(ws)} – ${fmtDay(we)}`;
+  $("#weekSub").textContent=`Semaine ${weekNum(ws)} · ${ws.getFullYear()}`;
+  const isAdmin=State.role==="admin";
+  $("#btnResponsable").classList.toggle("active",isAdmin);
+  $("#btnDirecteur").classList.toggle("active",!isAdmin);
+  $("#addBtn").style.display=isAdmin?"":"none";
+  $("#demoBanner").style.display=Store.mode==="demo"?"":"none";
+  $("#brand-sub").textContent = supaOn && Store.mode==="supabase" ? "Maintenance — partagé en temps réel" : "Maintenance — Groupe La Côte";
+
+  renderInbox();
+
+  const wrap=$("#week"); wrap.innerHTML="";
+  const todayStr=iso(new Date());
+  for(let i=0;i<CONFIG.HOURS.days;i++){
+    const d=addDays(ws,i), ds=iso(d);
+    const card=el("div","day"+(ds===todayStr?" today":""));
+    const busyCount=visibleRows().filter(r=>r.date===ds&&r.source!=="free").length;
+    card.appendChild(el("div","day-head",
+      `<span class="dname">${DAYS_FR[d.getDay()]}</span>
+       <span class="ddate">${fmtDay(d)}</span>
+       ${busyCount?`<span class="badge">${busyCount} interv.</span>`:``}`));
+    const bSite=baseSiteFor(ds);
+    if(bSite) card.appendChild(el("div","day-site",`📍 Site du jour · <b>${esc(bSite)}</b>`));
+    const slots=el("div","slots");
+    const items=dayTimeline(ds);
+    if(!items.length){slots.appendChild(el("div","empty-day","Journée complète libre"));}
+    for(const it of items){
+      if(it.free) slots.appendChild(freeRow(ds,it));
+      else slots.appendChild(jobRow(it.job));
+    }
+    card.appendChild(slots); wrap.appendChild(card);
+  }
+}
+
+function freeRow(dateStr,it){
+  const r=el("div","row free");
+  const bSite=baseSiteFor(dateStr);
+  const morningReco = bSite && it.start<NOON;
+  r.innerHTML=`<div class="time mono">${toHM(it.start)}<br>${toHM(it.end)}</div>
+    <div class="body"><div class="title">＋ Libre — proposer un créneau</div>
+    <div class="meta">${(it.end-it.start)} min disponibles${morningReco?` · <span class="reco">★ matin recommandé (${esc(bSite)})</span>`:``}</div></div>`;
+  r.onclick=()=>openRequest(dateStr,toHM(it.start),toHM(it.end));
+  return r;
+}
+
+function jobRow(j){
+  const cls = j.priority?"prio" : j.status==="requested"?"req" : j.status==="confirmed"?"confirmed":"busy";
+  const bSite=baseSiteFor(j.date);
+  const offsite = bSite && j.site!==bSite;
+  const r=el("div","row busy "+cls);
+  const stateTxt = j.priority?`<span class="state prio">Prioritaire Thibaut</span>`
+    : j.status==="requested"?`<span class="state req">Demande en attente</span>`
+    : j.status==="confirmed"?`<span class="state confirmed">Confirmé</span>`:``;
+  r.innerHTML=`<div class="marker"></div>
+    <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
+    <div class="body">
+      <div class="title">${esc(j.title)}</div>
+      <div class="meta"><span class="tag" style="background:var(--busy-bg);color:var(--busy)">${esc(j.site)}</span>${offsite?`<span class="chip-move">⚠ déplacement</span>`:``}${stateTxt}</div>
+      ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:``}
+      ${j.requested_by&&j.source==="adhoc"?`<div class="meta">Demandé par ${esc(j.requested_by)}</div>`:``}
+      ${State.role==="admin"?adminActions(j):``}
+    </div>`;
+  if(State.role==="admin"){
+    r.querySelectorAll("[data-act]").forEach(b=>b.onclick=e=>{e.stopPropagation();adminAct(b.dataset.act,j.id);});
+  }
+  return r;
+}
+function adminActions(j){
+  const a=[`<button class="btn small" data-act="edit">Modifier</button>`,
+           `<button class="btn small danger" data-act="del">Supprimer</button>`];
+  if(j.status==="requested") a.unshift(`<button class="btn small primary" data-act="ok">Confirmer</button>`);
+  return `<div class="admin-actions">${a.join("")}</div>`;
+}
+
+/* -------------------------------------------------------- Boîte de demandes */
+function renderInbox(){
+  const box=$("#inbox"); box.innerHTML="";
+  if(State.role!=="admin") return;
+  const pend=State.rows.filter(r=>r.status==="requested"||(r.status==="confirmed"&&r.priority&&r._fresh));
+  const reqs=State.rows.filter(r=>r.status==="requested");
+  if(!reqs.length) return;
+  const h=el("div","",`<h3 style="max-width:1180px;margin:14px auto 0;padding:0 4px;font-size:15px">📥 Demandes à traiter (${reqs.length})</h3>`);
+  box.appendChild(h);
+  reqs.sort((a,b)=>(b.priority?1:0)-(a.priority?1:0)).forEach(j=>{
+    const c=el("div","inbox-card"+(j.priority?" prio":""));
+    c.innerHTML=`<h4>${esc(j.title)} ${j.priority?'<span class="state prio">· Prioritaire</span>':''}</h4>
+      <div class="meta">${esc(j.site)} · ${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))} · ${esc(j.start)}–${esc(j.end)}${j.requested_by?` · par ${esc(j.requested_by)}`:''}</div>
+      ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:''}
+      <div class="inbox-actions">
+        <button class="btn small primary" data-ok>Confirmer</button>
+        <button class="btn small danger" data-no>Refuser</button>
+      </div>`;
+    c.querySelector("[data-ok]").onclick=()=>adminAct("ok",j.id);
+    c.querySelector("[data-no]").onclick=()=>adminAct("del",j.id);
+    box.appendChild(c);
+  });
+}
+
+/* =============================================================== ACTIONS ADMIN */
+async function adminAct(act,id){
+  const j=State.rows.find(r=>r.id===id); if(!j)return;
+  if(act==="ok"){await Store.update(id,{status:"confirmed"});toast("Intervention confirmée");await load();}
+  if(act==="del"){if(confirm("Supprimer cette intervention ?")){await Store.remove(id);toast("Supprimé");await load();}}
+  if(act==="edit"){openEdit(j);}
+}
+
+/* ================================================================== MODALES */
+const overlay=$("#overlay"), sheet=$("#sheet");
+function closeSheet(){overlay.classList.remove("open");sheet.innerHTML="";}
+overlay.onclick=e=>{if(e.target===overlay)closeSheet();};
+
+/* --- Demande directeur (clic sur créneau libre) --- */
+function openRequest(dateStr,startDefault,rangeEnd){
+  const dt=new Date(dateStr);
+  const durOpts=[30,60,90,120,150,180].map(m=>`<option value="${m}">${m} min</option>`).join("");
+  const siteDefault = State.site!=="__all__"?State.site:CONFIG.SITES[0];
+  sheet.innerHTML=`
+    <h3>Proposer une intervention</h3>
+    <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)} · créneau libre ${startDefault}–${rangeEnd}</div>
+    <div class="info-auto">ℹ️ Placement auto : <b>matin</b> si c'est le site du jour, <b>après-midi</b> sinon. Journée pleine → proposé au prochain jour. Cochez « Thibaut » pour imposer l'heure exacte.</div>
+    <div class="field"><label>Site concerné</label>
+      <select id="f-site">${CONFIG.SITES.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
+    <div class="field"><label>Objet de l'intervention</label>
+      <input id="f-title" placeholder="Ex : fuite bac à graisse, néon HS, frigo en alarme…"></div>
+    <div class="row2">
+      <div class="field"><label>Heure souhaitée (indicatif)</label><input id="f-start" type="time" value="${startDefault}"></div>
+      <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
+    </div>
+    <div class="field"><label>Précisions (facultatif)</label>
+      <textarea id="f-notes" placeholder="Détails utiles, niveau d'urgence, matériel concerné…"></textarea></div>
+    <div class="field"><label>Votre nom</label><input id="f-by" placeholder="Directeur / site"></div>
+
+    <label class="prio-box">
+      <input type="checkbox" id="f-prio">
+      <span><span class="t">Demande de Thibaut (prioritaire)</span>
+      <span class="d">À cocher uniquement pour une demande de la direction. Elle passe avant tout : si le créneau est occupé, vous pourrez déplacer l'intervention existante.</span></span>
+    </label>
+
+    <div class="sheet-actions">
+      <button class="btn" id="f-cancel">Annuler</button>
+      <button class="btn primary" id="f-send">Envoyer la demande</button>
+    </div>`;
+  overlay.classList.add("open");
+  $("#f-cancel").onclick=closeSheet;
+  $("#f-title").focus?.();
+  $("#f-send").onclick=async()=>{
+    const title=$("#f-title").value.trim();
+    if(!title){toast("Indique l'objet de l'intervention",true);return;}
+    const dur=parseInt($("#f-dur").value,10);
+    const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim()||"Directeur";
+    const prio=$("#f-prio").checked;
+
+    // Prioritaire (Thibaut) : heure exacte + déplacement de l'existant si conflit
+    if(prio){
+      const start=$("#f-start").value, end=toHM(toMin(start)+dur);
+      const clash=busyRowsOn(dateStr).find(r=>toMin(r.start)<toMin(end) && toMin(start)<toMin(r.end));
+      if(clash) return openPriorityMove(dateStr,{title,start,end,site,notes,by},clash);
+      return submitRequest({date:dateStr,site,title,start,end,notes,by,prio:true,status:"requested"});
+    }
+
+    // Demande normale : placement automatique selon le site du jour
+    const p=autoPlace(dateStr,site,dur);
+    if(!p){ toast("Aucun créneau libre dans les prochains jours",true); return; }
+    const end=toHM(toMin(p.start)+dur);
+    if(!p.sameDay){
+      const dObj=new Date(p.date);
+      if(!confirm(`Journée pleine. Proposer plutôt ${DAYS_FR[dObj.getDay()]} ${fmtDay(dObj)} à ${p.start} ?`)) return;
+    }
+    await submitRequest({date:p.date,site,title,start:p.start,end,notes,by,prio:false,status:"requested",
+      _base:p.base,_sameDay:p.sameDay,_pref:p.pref});
+  };
+}
+
+async function submitRequest(d){
+  const row={date:d.date,site:d.site,title:d.title,start:d.start,end:d.end,
+    status:State.role==="admin"?"confirmed":"requested",priority:!!d.prio,
+    source:"adhoc",requested_by:d.by,notes:d.notes};
+  await Store.insert(row);
+  closeSheet();
+  await notify(
+    (d.prio?"🔴 PRIORITAIRE — ":"🟠 Nouvelle demande — ")+d.site,
+    `${d.title}\n${DAYS_FR[new Date(d.date).getDay()]} ${fmtDay(new Date(d.date))} ${d.start}–${d.end}\nPar ${d.by}${d.notes?"\n"+d.notes:""}`
+  );
+  toast(
+    d.prio ? "Demande prioritaire envoyée ✔"
+    : d._sameDay===false ? "Journée pleine — reportée au prochain jour ✔"
+    : d._base ? "Placée le matin (site du jour) ✔"
+    : "Placée l'après-midi (autre site) ✔"
+  );
+  await load();
+}
+
+/* --- Déplacement prioritaire (Thibaut passe avant) --- */
+function openPriorityMove(dateStr,newJob,clash){
+  // créneaux libres de la semaine pour reloger l'intervention existante
+  const dur=toMin(clash.end)-toMin(clash.start);          // durée requise (min)
+  const ws=State.weekStart; const options=[];
+  for(let i=0;i<CONFIG.HOURS.days;i++){
+    const ds=iso(addDays(ws,i));
+    dayTimeline(ds).forEach(it=>{                          // it.start/end sont en MINUTES
+      if(it.free && (it.end-it.start)>=dur){
+        options.push({date:ds,start:toHM(it.start),end:toHM(it.end)});
+      }
+    });
+  }
+  sheet.innerHTML=`
+    <h3>Demande prioritaire</h3>
+    <div class="sub">Ce créneau est déjà occupé. En tant que demande de Thibaut, choisissez où déplacer l'intervention existante.</div>
+    <div class="conflict">À déplacer : <b>${esc(clash.title)}</b> — ${esc(clash.site)}, ${esc(clash.start)}–${esc(clash.end)}.<br>
+      Elle sera remplacée par : <b>${esc(newJob.title)}</b> (${esc(newJob.start)}–${esc(newJob.end)}).</div>
+    <div class="field"><label>Nouveau créneau pour « ${esc(clash.title)} » (${dur} min requis)</label>
+      <div class="pick-list" id="pickList">
+        ${options.length?options.map((o,i)=>`
+          <div class="pick" data-i="${i}">
+            <span>${DAYS_FR[new Date(o.date).getDay()]} ${fmtDay(new Date(o.date))}</span>
+            <span class="mono">${o.start} → ${toHM(toMin(o.start)+dur)}</span>
+          </div>`).join("")
+        :`<div class="empty-day">Aucun créneau libre suffisant cette semaine. Choisis une autre semaine ou supprime l'existant.</div>`}
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="p-cancel">Annuler</button>
+      <button class="btn danger" id="p-go" ${options.length?"":"disabled"}>Déplacer & prioriser</button>
+    </div>`;
+  overlay.classList.add("open");
+  let sel=-1;
+  sheet.querySelectorAll(".pick").forEach(p=>p.onclick=()=>{
+    sheet.querySelectorAll(".pick").forEach(x=>x.classList.remove("sel"));
+    p.classList.add("sel"); sel=+p.dataset.i;
+  });
+  $("#p-cancel").onclick=closeSheet;
+  $("#p-go").onclick=async()=>{
+    if(sel<0){toast("Choisis un nouveau créneau",true);return;}
+    const o=options[sel];
+    // 1) déplacer l'existant
+    await Store.update(clash.id,{date:o.date,start:o.start,end:toHM(toMin(o.start)+dur),
+      notes:(clash.notes?clash.notes+" · ":"")+"Déplacé (priorité Thibaut)"});
+    // 2) placer la demande prioritaire
+    await Store.insert({date:dateStr,site:newJob.site,title:newJob.title,start:newJob.start,end:newJob.end,
+      status:State.role==="admin"?"confirmed":"requested",priority:true,source:"adhoc",
+      requested_by:newJob.by,notes:newJob.notes});
+    closeSheet();
+    await notify("🔴 PRIORITAIRE (Thibaut) — "+newJob.site,
+      `${newJob.title}\n${DAYS_FR[new Date(dateStr).getDay()]} ${fmtDay(new Date(dateStr))} ${newJob.start}–${newJob.end}\n`+
+      `⤷ « ${clash.title} » déplacée vers ${DAYS_FR[new Date(o.date).getDay()]} ${fmtDay(new Date(o.date))} ${o.start}`);
+    toast("Priorité posée · intervention existante déplacée ✔");
+    await load();
+  };
+}
+
+/* --- Ajout / édition (admin) --- */
+function openEdit(j){
+  const isNew=!j;
+  j=j||{date:iso(State.weekStart),site:CONFIG.SITES[0],title:"",start:"09:00",end:"10:00",notes:"",status:"planned",priority:false,source:"adhoc"};
+  sheet.innerHTML=`
+    <h3>${isNew?"Nouvelle intervention":"Modifier l'intervention"}</h3>
+    <div class="sub">Mode responsable</div>
+    <div class="field"><label>Site</label><select id="e-site">${CONFIG.SITES.map(s=>`<option ${s===j.site?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
+    <div class="field"><label>Objet</label><input id="e-title" value="${esc(j.title)}"></div>
+    <div class="row2">
+      <div class="field"><label>Date</label><input id="e-date" type="date" value="${j.date}"></div>
+      <div class="field"><label>&nbsp;</label>
+        <select id="e-status"><option value="planned"${j.status==="planned"?" selected":""}>Planifié</option>
+        <option value="confirmed"${j.status==="confirmed"?" selected":""}>Confirmé</option></select></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Début</label><input id="e-start" type="time" value="${j.start}"></div>
+      <div class="field"><label>Fin</label><input id="e-end" type="time" value="${j.end}"></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea id="e-notes">${esc(j.notes||"")}</textarea></div>
+    <div class="sheet-actions">
+      <button class="btn" id="e-cancel">Annuler</button>
+      <button class="btn primary" id="e-save">Enregistrer</button>
+    </div>`;
+  overlay.classList.add("open");
+  $("#e-cancel").onclick=closeSheet;
+  $("#e-save").onclick=async()=>{
+    const patch={site:$("#e-site").value,title:$("#e-title").value.trim(),date:$("#e-date").value,
+      start:$("#e-start").value,end:$("#e-end").value,status:$("#e-status").value,notes:$("#e-notes").value.trim()};
+    if(!patch.title){toast("Objet requis",true);return;}
+    if(isNew){patch.priority=false;patch.source="adhoc";patch.requested_by="Technicien";await Store.insert(patch);}
+    else{await Store.update(j.id,patch);}
+    closeSheet();toast("Enregistré ✔");await load();
+  };
+}
+
+/* ================================================================== NAV / UI */
+function bindUI(){
+  $("#prevWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,-7);load();};
+  $("#nextWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,7);load();};
+  $("#todayBtn").onclick=()=>{State.weekStart=mondayOf(new Date());load();};
+  $("#addBtn").onclick=()=>openEdit(null);
+
+  const sel=$("#siteFilter");
+  sel.innerHTML=`<option value="__all__">Tous les sites</option>`+CONFIG.SITES.map(s=>`<option>${esc(s)}</option>`).join("");
+  sel.onchange=()=>{State.site=sel.value;render();};
+
+  $("#btnDirecteur").onclick=()=>{
+    if(State.role!=="directeur"){State.role="directeur";toast("Mode directeur");render();}
+  };
+  $("#btnResponsable").onclick=()=>{
+    if(State.role==="admin") return;
+    const pin=prompt("Code responsable :");
+    if(pin===CONFIG.ADMIN_PIN){State.role="admin";toast("Mode responsable activé");render();}
+    else if(pin!==null)toast("Code incorrect",true);
+  };
+
+  $("#footer").innerHTML = supaOn
+    ? `Partagé en temps réel · alertes ${CONFIG.NTFY_TOPIC?"ntfy":""}${CONFIG.NTFY_TOPIC&&CONFIG.N8N_WEBHOOK?" + ":""}${CONFIG.N8N_WEBHOOK?"n8n":""}${!CONFIG.NTFY_TOPIC&&!CONFIG.N8N_WEBHOOK?"non configurées":""}`
+    : `Mode démo local — configure Supabase pour partager entre les sites`;
+}
+
+/* ===================================================================== BOOT */
+function boot(){
+  Store=makeStore();
+  bindUI();
+  Store.subscribe && Store.subscribe(()=>load());
+  load();
+}
+
+/* Charge le SDK Supabase si configuré, PUIS démarre (après toutes les déclarations) */
+(function start(){
+  if(supaOn){
+    const s=document.createElement("script");
+    s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+    s.onload=boot;
+    s.onerror=()=>{console.warn("Supabase indisponible → mode démo");window.__supaFail=true;boot();};
+    document.head.appendChild(s);
+  } else { boot(); }
+})();
+</script>
+</body>
+</html>
