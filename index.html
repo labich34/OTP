@@ -134,6 +134,15 @@ header.app{
 .reco{color:var(--free);font-weight:600}
 .info-auto{background:#eaf3ff;border:1px solid #cfe0f7;color:#2c4a6e;border-radius:10px;
   padding:8px 10px;font-size:12px;line-height:1.35;margin-bottom:12px}
+.set-h{font-weight:700;margin:16px 0 6px;color:var(--brand-ink);border-top:1px solid var(--line);padding-top:12px}
+.set-note{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+.set-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.set-row input,.set-row select{flex:1;min-width:0;padding:9px 10px;border:1px solid var(--line-strong);
+  border-radius:9px;background:var(--surface);color:var(--ink);font-size:14px}
+.set-row input[type=time]{flex:0 0 auto}
+.set-lbl{flex:0 0 82px;font-size:13px;color:var(--ink)}
+.set-card{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(0,0,0,.02)}
+.set-site-del,.set-rec-del{flex:0 0 auto}
 .row{
   display:flex;gap:10px;align-items:stretch;padding:9px 8px;border-radius:var(--radius-sm);
   border:1px solid transparent
@@ -261,6 +270,7 @@ header.app{
     <select id="siteFilter" aria-label="Filtrer par site"></select>
   </div>
   <button class="btn primary small" id="addBtn" style="display:none">+ Intervention</button>
+  <button class="btn ghost small" id="settingsBtn" style="display:none">⚙ Paramètres</button>
 </div>
 
 <div class="legend">
@@ -290,16 +300,20 @@ header.app{
 const CONFIG = {
 
   /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
-  SUPABASE_URL: "https://xtiuwzktevutvynqpyfo.supabase.co",
-  SUPABASE_ANON_KEY: "sb_publishable___3wIK5wRTj5nCaPAKqLlA_djjqQK7D",
+  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
+  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
+
   /* --- 2. Alertes sur ton téléphone --- */
   //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
   NTFY_TOPIC: "",            // ex: "fabien-planning-x7q2z"  (choisis un mot secret)
   //  b) OU/ET un webhook n8n (email, Telegram, etc.) — laisse vide si non utilisé
   N8N_WEBHOOK: "",           // ex: "https://ton-n8n/webhook/planning"
 
-  /* --- 3. Code d'accès à TON mode admin (les directeurs ne l'ont pas) --- */
-  ADMIN_PIN: "3636",
+  /* --- 3. Empreinte (SHA-256) du code Responsable — PAS le code en clair ---
+     Par défaut = empreinte de "2468". Change ton code dans l'appli :
+     Responsable > ⚙ Paramètres > Sécurité (le nouveau code est haché et stocké
+     dans Supabase, jamais écrit ici). Le fichier public ne révèle donc rien.     */
+  ADMIN_PIN_HASH: "a1fb4e703a9ef1fa4936801721ff285a97ac85330856674412e054892afe6972",
 
   /* --- 4. Tes sites (renomme librement) --- */
   SITES: ["Resto Nyon Gare", "Resto Gland", "Resto Signy", "Crèche La Côte"],
@@ -352,26 +366,75 @@ const State={
   rows:[],                    // interventions de la semaine affichée
 };
 
+/* --------------------------------------------- Paramètres modifiables (UI)
+   Partagés via Supabase (table app_settings) ; repli localStorage en démo.     */
+let SB=null;
+const SETTINGS = {
+  sites: CONFIG.SITES.slice(),
+  recurring: CONFIG.RECURRING.map(x=>({...x})),
+  baseSite: {...CONFIG.BASE_SITE},
+  pinHash: ""            // vide => on utilise l'empreinte du fichier (CONFIG.ADMIN_PIN_HASH)
+};
+async function sha256Hex(s){
+  const buf=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s)));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function applySettings(d){
+  if(!d||typeof d!=="object") return;
+  if(Array.isArray(d.sites)&&d.sites.length) SETTINGS.sites=d.sites.slice();
+  if(Array.isArray(d.recurring)) SETTINGS.recurring=d.recurring.map(x=>({...x}));
+  if(d.baseSite&&typeof d.baseSite==="object") SETTINGS.baseSite={...d.baseSite};
+  if(typeof d.pinHash==="string") SETTINGS.pinHash=d.pinHash;
+}
+async function loadSettings(){
+  try{
+    if(SB){
+      const {data,error}=await SB.from("app_settings").select("data").eq("id",1).maybeSingle();
+      if(!error && data) applySettings(data.data);
+    } else {
+      const raw=localStorage.getItem("planning_settings");
+      if(raw) applySettings(JSON.parse(raw));
+    }
+  }catch(e){ console.warn("loadSettings",e); }
+}
+async function saveSettings(){
+  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,pinHash:SETTINGS.pinHash};
+  if(SB){
+    const {error}=await SB.from("app_settings").upsert({id:1,data:payload,updated_at:new Date().toISOString()});
+    if(error) throw error;
+  } else {
+    localStorage.setItem("planning_settings",JSON.stringify(payload));
+  }
+}
+function subscribeSettings(){
+  if(!SB) return;
+  try{
+    SB.channel("settings").on("postgres_changes",{event:"*",schema:"public",table:"app_settings"},
+      async()=>{ await loadSettings(); bindSiteFilter(); render(); }).subscribe();
+  }catch(e){ console.warn("subscribeSettings",e); }
+}
+
 /* ============================================================ COUCHE DONNÉES
    Deux implémentations : Supabase (partagé) ou localStorage (démo).           */
 let Store;
 function makeStore(){
   if(supaOn && !window.__supaFail && window.supabase){
-    const sb=window.supabase.createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_ANON_KEY);
+    SB=window.supabase.createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_ANON_KEY);
     let chan=null;
     return {
       mode:"supabase",
       async list(ws){
         const from=iso(ws), to=iso(addDays(ws,6));
-        const {data,error}=await sb.from("interventions").select("*").gte("date",from).lte("date",to);
+        const {data,error}=await SB.from("interventions").select("*").gte("date",from).lte("date",to);
         if(error)throw error; return data||[];
       },
-      async insert(r){const{data,error}=await sb.from("interventions").insert(r).select().single();if(error)throw error;return data;},
-      async update(id,p){const{error}=await sb.from("interventions").update(p).eq("id",id);if(error)throw error;},
-      async remove(id){const{error}=await sb.from("interventions").delete().eq("id",id);if(error)throw error;},
+      async insert(r){const{data,error}=await SB.from("interventions").insert(r).select().single();if(error)throw error;return data;},
+      async update(id,p){const{error}=await SB.from("interventions").update(p).eq("id",id);if(error)throw error;},
+      async remove(id){const{error}=await SB.from("interventions").delete().eq("id",id);if(error)throw error;},
+      async renameSite(oldN,newN){const{error}=await SB.from("interventions").update({site:newN}).eq("site",oldN);if(error)throw error;},
       subscribe(cb){
-        if(chan)sb.removeChannel(chan);
-        chan=sb.channel("iv").on("postgres_changes",{event:"*",schema:"public",table:"interventions"},cb).subscribe();
+        if(chan)SB.removeChannel(chan);
+        chan=SB.channel("iv").on("postgres_changes",{event:"*",schema:"public",table:"interventions"},cb).subscribe();
       }
     };
   }
@@ -384,6 +447,7 @@ function makeStore(){
     async insert(r){const a=this._read();r.id="loc_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);a.push(r);this._write(a);return r;},
     async update(id,p){const a=this._read();const i=a.findIndex(x=>x.id===id);if(i>=0){Object.assign(a[i],p);this._write(a);}},
     async remove(id){this._write(this._read().filter(x=>x.id!==id));},
+    async renameSite(oldN,newN){const a=this._read();a.forEach(r=>{if(r.site===oldN)r.site=newN;});this._write(a);},
     subscribe(){/* pas de temps réel en démo : on re-render après chaque action */}
   };
 }
@@ -391,7 +455,7 @@ function makeStore(){
 /* Génère les interventions récurrentes manquantes pour la semaine affichée */
 async function materialize(ws,existing){
   const created=[];
-  for(const t of CONFIG.RECURRING){
+  for(const t of SETTINGS.recurring){
     const date=iso(addDays(ws,t.weekday-1));
     const dup=existing.some(r=>r.source==="template"&&r.date===date&&r.start===t.start&&r.site===t.site&&r.title===t.title);
     if(!dup){
@@ -449,7 +513,7 @@ function dayTimeline(dateStr){
 
 /* --- Regroupement par site du jour --------------------------------------- */
 const NOON = 12*60;
-function baseSiteFor(dateStr){ return (CONFIG.BASE_SITE&&CONFIG.BASE_SITE[new Date(dateStr).getDay()])||null; }
+function baseSiteFor(dateStr){ return (SETTINGS.baseSite&&SETTINGS.baseSite[new Date(dateStr).getDay()])||null; }
 function isWorkday(d){ const w=d.getDay(); return w>=1 && w<=CONFIG.HOURS.days; }
 function nextWorkday(dateStr){ let x=new Date(dateStr); do{ x=addDays(x,1); }while(!isWorkday(x)); return iso(x); }
 
@@ -502,6 +566,7 @@ function render(){
   $("#btnResponsable").classList.toggle("active",isAdmin);
   $("#btnDirecteur").classList.toggle("active",!isAdmin);
   $("#addBtn").style.display=isAdmin?"":"none";
+  $("#settingsBtn").style.display=isAdmin?"":"none";
   $("#demoBanner").style.display=Store.mode==="demo"?"":"none";
   $("#brand-sub").textContent = supaOn && Store.mode==="supabase" ? "Maintenance — partagé en temps réel" : "Maintenance — Groupe La Côte";
 
@@ -611,13 +676,13 @@ overlay.onclick=e=>{if(e.target===overlay)closeSheet();};
 function openRequest(dateStr,startDefault,rangeEnd){
   const dt=new Date(dateStr);
   const durOpts=[30,60,90,120,150,180].map(m=>`<option value="${m}">${m} min</option>`).join("");
-  const siteDefault = State.site!=="__all__"?State.site:CONFIG.SITES[0];
+  const siteDefault = State.site!=="__all__"?State.site:SETTINGS.sites[0];
   sheet.innerHTML=`
     <h3>Proposer une intervention</h3>
     <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)} · créneau libre ${startDefault}–${rangeEnd}</div>
     <div class="info-auto">ℹ️ Placement auto : <b>matin</b> si c'est le site du jour, <b>après-midi</b> sinon. Journée pleine → proposé au prochain jour. Cochez « Thibaut » pour imposer l'heure exacte.</div>
     <div class="field"><label>Site concerné</label>
-      <select id="f-site">${CONFIG.SITES.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
+      <select id="f-site">${SETTINGS.sites.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
     <div class="field"><label>Objet de l'intervention</label>
       <input id="f-title" placeholder="Ex : fuite bac à graisse, néon HS, frigo en alarme…"></div>
     <div class="row2">
@@ -749,11 +814,11 @@ function openPriorityMove(dateStr,newJob,clash){
 /* --- Ajout / édition (admin) --- */
 function openEdit(j){
   const isNew=!j;
-  j=j||{date:iso(State.weekStart),site:CONFIG.SITES[0],title:"",start:"09:00",end:"10:00",notes:"",status:"planned",priority:false,source:"adhoc"};
+  j=j||{date:iso(State.weekStart),site:SETTINGS.sites[0],title:"",start:"09:00",end:"10:00",notes:"",status:"planned",priority:false,source:"adhoc"};
   sheet.innerHTML=`
     <h3>${isNew?"Nouvelle intervention":"Modifier l'intervention"}</h3>
     <div class="sub">Mode responsable</div>
-    <div class="field"><label>Site</label><select id="e-site">${CONFIG.SITES.map(s=>`<option ${s===j.site?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
+    <div class="field"><label>Site</label><select id="e-site">${SETTINGS.sites.map(s=>`<option ${s===j.site?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
     <div class="field"><label>Objet</label><input id="e-title" value="${esc(j.title)}"></div>
     <div class="row2">
       <div class="field"><label>Date</label><input id="e-date" type="date" value="${j.date}"></div>
@@ -782,25 +847,128 @@ function openEdit(j){
   };
 }
 
+/* ============================================================= PARAMÈTRES */
+function openSettings(){
+  let sid=0; const nid=()=>"s"+(sid++);
+  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], newPin:"" };
+  const byName=n=>draft.sites.find(s=>s.name===n);
+  for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
+  draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00"}; });
+  renderSettings(draft);
+}
+
+function renderSettings(draft){
+  const wdOpts=sel=>[1,2,3,4,5].map(w=>`<option value="${w}"${+sel===w?" selected":""}>${DAYS_FR[w]}</option>`).join("");
+  const siteOpts=sel=>`<option value="">—</option>`+draft.sites.map(s=>`<option value="${s.id}"${s.id===sel?" selected":""}>${esc(s.name||"(sans nom)")}</option>`).join("");
+
+  const sitesHtml=draft.sites.map((s,i)=>`
+    <div class="set-row">
+      <input class="set-site-name" data-i="${i}" value="${esc(s.name)}" placeholder="Nom du site">
+      <button class="btn small danger set-site-del" data-i="${i}">✕</button>
+    </div>`).join("");
+  const baseHtml=[1,2,3,4,5].map(w=>`
+    <div class="set-row"><label class="set-lbl">${DAYS_FR[w]}</label>
+      <select class="set-base" data-w="${w}">${siteOpts(draft.baseSite[w]||"")}</select></div>`).join("");
+  const recHtml=draft.recurring.map((r,i)=>`
+    <div class="set-card">
+      <div class="set-row"><input class="set-rec-title" data-i="${i}" value="${esc(r.title)}" placeholder="Objet (ex : maintenance AC)"></div>
+      <div class="set-row">
+        <select class="set-rec-site" data-i="${i}">${siteOpts(r.siteId)}</select>
+        <select class="set-rec-wd" data-i="${i}">${wdOpts(r.weekday)}</select></div>
+      <div class="set-row">
+        <input class="set-rec-start" data-i="${i}" type="time" value="${r.start}">
+        <input class="set-rec-end" data-i="${i}" type="time" value="${r.end}">
+        <button class="btn small danger set-rec-del" data-i="${i}">✕</button></div>
+    </div>`).join("");
+
+  sheet.innerHTML=`
+    <h3>⚙ Paramètres</h3>
+    <div class="sub">Mode responsable · modifications partagées avec tous</div>
+    <div class="set-h">🏢 Sites</div>
+    ${sitesHtml}
+    <button class="btn small" id="set-add-site">+ Ajouter un site</button>
+    <div class="set-h">📍 Site du jour</div>
+    <div class="set-note">Où tu es posté chaque jour (regroupe le travail le matin).</div>
+    ${baseHtml}
+    <div class="set-h">🔁 Tâches récurrentes</div>
+    <div class="set-note">Se recréent automatiquement chaque semaine.</div>
+    ${recHtml||`<div class="set-note">Aucune tâche pour l'instant.</div>`}
+    <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
+    <div class="set-h">🔒 Code Responsable</div>
+    <div class="set-note">Vide = code inchangé. Le code est haché (jamais stocké en clair) ; privilégie un code long/alphanumérique pour une vraie protection.</div>
+    <div class="field"><input id="set-pin" type="text" autocomplete="off" placeholder="Nouveau code (facultatif)"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="set-cancel">Fermer</button>
+      <button class="btn primary" id="set-save">Enregistrer</button>
+    </div>`;
+  overlay.classList.add("open");
+
+  sheet.querySelectorAll(".set-site-name").forEach(o=>o.oninput=()=>{draft.sites[+o.dataset.i].name=o.value;});
+  sheet.querySelectorAll(".set-base").forEach(o=>o.onchange=()=>{draft.baseSite[+o.dataset.w]=o.value;});
+  sheet.querySelectorAll(".set-rec-title").forEach(o=>o.oninput=()=>{draft.recurring[+o.dataset.i].title=o.value;});
+  sheet.querySelectorAll(".set-rec-site").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].siteId=o.value;});
+  sheet.querySelectorAll(".set-rec-wd").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].weekday=+o.value;});
+  sheet.querySelectorAll(".set-rec-start").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].start=o.value;});
+  sheet.querySelectorAll(".set-rec-end").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].end=o.value;});
+  sheet.querySelectorAll(".set-site-del").forEach(b=>b.onclick=()=>{draft.sites.splice(+b.dataset.i,1);renderSettings(draft);});
+  sheet.querySelectorAll(".set-rec-del").forEach(b=>b.onclick=()=>{draft.recurring.splice(+b.dataset.i,1);renderSettings(draft);});
+  $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:""});renderSettings(draft);};
+  $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00"});renderSettings(draft);};
+  $("#set-cancel").onclick=closeSheet;
+  $("#set-pin").oninput=e=>{draft.newPin=e.target.value;};
+  $("#set-save").onclick=()=>saveSettingsFromDraft(draft);
+}
+
+async function saveSettingsFromDraft(draft){
+  const names=draft.sites.map(s=>s.name.trim());
+  if(!names.length){toast("Ajoute au moins un site",true);return;}
+  if(names.some(n=>!n)){toast("Un site est sans nom",true);return;}
+  if(new Set(names).size!==names.length){toast("Deux sites ont le même nom",true);return;}
+  const idToName={}; draft.sites.forEach((s,i)=>idToName[s.id]=names[i]);
+  const renames=draft.sites.filter(s=>s.orig&&idToName[s.id]!==s.orig).map(s=>({from:s.orig,to:idToName[s.id]}));
+
+  const newBase={}; for(let w=1;w<=5;w++){ const id=draft.baseSite[w]; newBase[w]= id&&idToName[id] ? idToName[id] : ""; }
+  const newRec=draft.recurring.filter(r=>r.siteId&&idToName[r.siteId]&&r.title.trim())
+    .map(r=>({site:idToName[r.siteId],title:r.title.trim(),weekday:+r.weekday,start:r.start,end:r.end}));
+
+  SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
+  if(draft.newPin&&draft.newPin.trim()) SETTINGS.pinHash=await sha256Hex(draft.newPin.trim());
+
+  try{
+    for(const r of renames){ if(Store.renameSite) await Store.renameSite(r.from,r.to); }
+    await saveSettings();
+    closeSheet(); bindSiteFilter(); toast("Paramètres enregistrés ✔"); await load();
+  }catch(e){ console.warn(e); toast("Enregistrement impossible (table app_settings ?)",true); }
+}
+
 /* ================================================================== NAV / UI */
+function bindSiteFilter(){
+  const sel=$("#siteFilter"); if(!sel) return;
+  const cur=sel.value||"__all__";
+  sel.innerHTML=`<option value="__all__">Tous les sites</option>`+SETTINGS.sites.map(s=>`<option>${esc(s)}</option>`).join("");
+  sel.value=[...sel.options].some(o=>o.value===cur)?cur:"__all__";
+}
 function bindUI(){
   $("#prevWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,-7);load();};
   $("#nextWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,7);load();};
   $("#todayBtn").onclick=()=>{State.weekStart=mondayOf(new Date());load();};
   $("#addBtn").onclick=()=>openEdit(null);
+  $("#settingsBtn").onclick=openSettings;
 
+  bindSiteFilter();
   const sel=$("#siteFilter");
-  sel.innerHTML=`<option value="__all__">Tous les sites</option>`+CONFIG.SITES.map(s=>`<option>${esc(s)}</option>`).join("");
   sel.onchange=()=>{State.site=sel.value;render();};
 
   $("#btnDirecteur").onclick=()=>{
     if(State.role!=="directeur"){State.role="directeur";toast("Mode directeur");render();}
   };
-  $("#btnResponsable").onclick=()=>{
+  $("#btnResponsable").onclick=async()=>{
     if(State.role==="admin") return;
     const pin=prompt("Code responsable :");
-    if(pin===CONFIG.ADMIN_PIN){State.role="admin";toast("Mode responsable activé");render();}
-    else if(pin!==null)toast("Code incorrect",true);
+    if(pin===null) return;
+    const target = SETTINGS.pinHash || CONFIG.ADMIN_PIN_HASH;
+    if(await sha256Hex(pin)===target){State.role="admin";toast("Mode responsable activé");render();}
+    else toast("Code incorrect",true);
   };
 
   $("#footer").innerHTML = supaOn
@@ -809,10 +977,12 @@ function bindUI(){
 }
 
 /* ===================================================================== BOOT */
-function boot(){
+async function boot(){
   Store=makeStore();
+  await loadSettings();
   bindUI();
   Store.subscribe && Store.subscribe(()=>load());
+  subscribeSettings();
   load();
 }
 
