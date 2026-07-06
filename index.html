@@ -456,6 +456,12 @@ function makeStore(){
 async function materialize(ws,existing){
   const created=[];
   for(const t of SETTINGS.recurring){
+    // Fréquence : toutes les 2 semaines → ne matérialise que selon la parité du n° de semaine ISO
+    if(Number(t.freq)===2){
+      const even = weekNum(ws)%2===0;
+      const runThisWeek = (t.parity==="odd") ? !even : even;   // défaut = semaines paires
+      if(!runThisWeek) continue;
+    }
     const date=iso(addDays(ws,t.weekday-1));
     const dup=existing.some(r=>r.source==="template"&&r.date===date&&r.start===t.start&&r.site===t.site&&r.title===t.title);
     if(!dup){
@@ -853,7 +859,7 @@ function openSettings(){
   const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
-  draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00"}; });
+  draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even"}; });
   renderSettings(draft);
 }
 
@@ -879,6 +885,15 @@ function renderSettings(draft){
         <input class="set-rec-start" data-i="${i}" type="time" value="${r.start}">
         <input class="set-rec-end" data-i="${i}" type="time" value="${r.end}">
         <button class="btn small danger set-rec-del" data-i="${i}">✕</button></div>
+      <div class="set-row">
+        <select class="set-rec-freq" data-i="${i}">
+          <option value="1"${r.freq===1?" selected":""}>Chaque semaine</option>
+          <option value="2"${r.freq===2?" selected":""}>Toutes les 2 semaines</option>
+        </select>
+        ${r.freq===2?`<select class="set-rec-parity" data-i="${i}">
+          <option value="even"${r.parity==="even"?" selected":""}>Semaines paires</option>
+          <option value="odd"${r.parity==="odd"?" selected":""}>Semaines impaires</option>
+        </select>`:``}</div>
     </div>`).join("");
 
   sheet.innerHTML=`
@@ -891,7 +906,7 @@ function renderSettings(draft){
     <div class="set-note">Où tu es posté chaque jour (regroupe le travail le matin).</div>
     ${baseHtml}
     <div class="set-h">🔁 Tâches récurrentes</div>
-    <div class="set-note">Se recréent automatiquement chaque semaine.</div>
+    <div class="set-note">Se recréent automatiquement. Semaine affichée : n°${weekNum(State.weekStart)} (${weekNum(State.weekStart)%2===0?"paire":"impaire"}).</div>
     ${recHtml||`<div class="set-note">Aucune tâche pour l'instant.</div>`}
     <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
     <div class="set-h">🔒 Code Responsable</div>
@@ -910,10 +925,12 @@ function renderSettings(draft){
   sheet.querySelectorAll(".set-rec-wd").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].weekday=+o.value;});
   sheet.querySelectorAll(".set-rec-start").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].start=o.value;});
   sheet.querySelectorAll(".set-rec-end").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].end=o.value;});
+  sheet.querySelectorAll(".set-rec-freq").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].freq=+o.value;renderSettings(draft);});
+  sheet.querySelectorAll(".set-rec-parity").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].parity=o.value;});
   sheet.querySelectorAll(".set-site-del").forEach(b=>b.onclick=()=>{draft.sites.splice(+b.dataset.i,1);renderSettings(draft);});
   sheet.querySelectorAll(".set-rec-del").forEach(b=>b.onclick=()=>{draft.recurring.splice(+b.dataset.i,1);renderSettings(draft);});
   $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:""});renderSettings(draft);};
-  $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00"});renderSettings(draft);};
+  $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00",freq:1,parity:"even"});renderSettings(draft);};
   $("#set-cancel").onclick=closeSheet;
   $("#set-pin").oninput=e=>{draft.newPin=e.target.value;};
   $("#set-save").onclick=()=>saveSettingsFromDraft(draft);
@@ -929,7 +946,8 @@ async function saveSettingsFromDraft(draft){
 
   const newBase={}; for(let w=1;w<=5;w++){ const id=draft.baseSite[w]; newBase[w]= id&&idToName[id] ? idToName[id] : ""; }
   const newRec=draft.recurring.filter(r=>r.siteId&&idToName[r.siteId]&&r.title.trim())
-    .map(r=>({site:idToName[r.siteId],title:r.title.trim(),weekday:+r.weekday,start:r.start,end:r.end}));
+    .map(r=>({site:idToName[r.siteId],title:r.title.trim(),weekday:+r.weekday,start:r.start,end:r.end,
+      freq:r.freq===2?2:1,parity:r.freq===2?(r.parity==="odd"?"odd":"even"):"even"}));
 
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
   if(draft.newPin&&draft.newPin.trim()) SETTINGS.pinHash=await sha256Hex(draft.newPin.trim());
