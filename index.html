@@ -143,6 +143,9 @@ header.app{
 .set-lbl{flex:0 0 82px;font-size:13px;color:var(--ink)}
 .set-card{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(0,0,0,.02)}
 .set-site-del,.set-rec-del{flex:0 0 auto}
+.row.rush{background:repeating-linear-gradient(45deg,#efe9dd,#efe9dd 8px,#e7e0d0 8px,#e7e0d0 16px);border-color:var(--line-strong);color:var(--ink-soft)}
+.row.rush .marker{width:4px;border-radius:3px;background:var(--ink-soft);flex:none}
+.row.rush .title{color:var(--ink)}
 .row{
   display:flex;gap:10px;align-items:stretch;padding:9px 8px;border-radius:var(--radius-sm);
   border:1px solid transparent
@@ -300,8 +303,8 @@ header.app{
 const CONFIG = {
 
   /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
-  SUPABASE_URL: "https://xtiuwzktevutvynqpyfo.supabase.co",      
-  SUPABASE_ANON_KEY: "sb_publishable___3wIK5wRTj5nCaPAKqLlA_djjqQK7D",
+  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
+  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
 
   /* --- 2. Alertes sur ton téléphone --- */
   //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
@@ -324,6 +327,10 @@ const CONFIG = {
 
   /* --- 5. Horaires de travail affichés --- */
   HOURS: { start: 7, end: 18, slotMin: 30, days: 5 }, // Lun→Ven (samedi/dimanche retirés)
+
+  /* --- 5c. Rush du midi (coup de feu cuisine) : créneau bloqué chaque jour ---
+     Réglable dans l'appli : Responsable > ⚙ Paramètres > Rush du midi.          */
+  RUSH: { enabled: true, start: "11:45", end: "13:20", label: "Rush cuisine" },
 
   /* --- 6. Ton planning RÉCURRENT (se régénère chaque semaine automatiquement) ---
      weekday : 1=Lundi … 6=Samedi   |   heures au format "HH:MM"                  */
@@ -373,6 +380,7 @@ const SETTINGS = {
   sites: CONFIG.SITES.slice(),
   recurring: CONFIG.RECURRING.map(x=>({...x})),
   baseSite: {...CONFIG.BASE_SITE},
+  rush: {...CONFIG.RUSH},
   pinHash: ""            // vide => on utilise l'empreinte du fichier (CONFIG.ADMIN_PIN_HASH)
 };
 async function sha256Hex(s){
@@ -384,6 +392,7 @@ function applySettings(d){
   if(Array.isArray(d.sites)&&d.sites.length) SETTINGS.sites=d.sites.slice();
   if(Array.isArray(d.recurring)) SETTINGS.recurring=d.recurring.map(x=>({...x}));
   if(d.baseSite&&typeof d.baseSite==="object") SETTINGS.baseSite={...d.baseSite};
+  if(d.rush&&typeof d.rush==="object") SETTINGS.rush={...CONFIG.RUSH,...d.rush};
   if(typeof d.pinHash==="string") SETTINGS.pinHash=d.pinHash;
 }
 async function loadSettings(){
@@ -398,7 +407,7 @@ async function loadSettings(){
   }catch(e){ console.warn("loadSettings",e); }
 }
 async function saveSettings(){
-  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,pinHash:SETTINGS.pinHash};
+  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,pinHash:SETTINGS.pinHash};
   if(SB){
     const {error}=await SB.from("app_settings").upsert({id:1,data:payload,updated_at:new Date().toISOString()});
     if(error) throw error;
@@ -504,8 +513,9 @@ function visibleRows(){
 
 function dayTimeline(dateStr){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
-  const jobs=visibleRows().filter(r=>r.date===dateStr)
-    .sort((a,b)=>toMin(a.start)-toMin(b.start));
+  const jobs=visibleRows().filter(r=>r.date===dateStr);
+  const rr=rushRow(dateStr); if(rr) jobs.push(rr);
+  jobs.sort((a,b)=>toMin(a.start)-toMin(b.start));
   const items=[]; let cur=open;
   for(const j of jobs){
     const s=Math.max(toMin(j.start),open), e=Math.min(toMin(j.end),close);
@@ -520,13 +530,16 @@ function dayTimeline(dateStr){
 /* --- Regroupement par site du jour --------------------------------------- */
 const NOON = 12*60;
 function baseSiteFor(dateStr){ return (SETTINGS.baseSite&&SETTINGS.baseSite[new Date(dateStr).getDay()])||null; }
+function rushInterval(){ const r=SETTINGS.rush; return (r&&r.enabled)?{start:r.start,end:r.end,label:r.label||"Rush cuisine"}:null; }
+function rushRow(dateStr){ const r=rushInterval(); return r?{date:dateStr,site:"—",title:r.label,start:r.start,end:r.end,status:"planned",source:"rush",priority:false}:null; }
 function isWorkday(d){ const w=d.getDay(); return w>=1 && w<=CONFIG.HOURS.days; }
 function nextWorkday(dateStr){ let x=new Date(dateStr); do{ x=addDays(x,1); }while(!isWorkday(x)); return iso(x); }
 
 // Occupation réelle d'un jour = TOUS sites confondus (Thibaut est seul)
 function busyRowsOn(dateStr){
-  return State.rows.filter(r=>r.status!=="cancelled" && r.date===dateStr && r.source!=="free")
-    .sort((a,b)=>toMin(a.start)-toMin(b.start));
+  const rows=State.rows.filter(r=>r.status!=="cancelled" && r.date===dateStr && r.source!=="free");
+  const rr=rushRow(dateStr); if(rr) rows.push(rr);
+  return rows.sort((a,b)=>toMin(a.start)-toMin(b.start));
 }
 function freeGapsAll(dateStr){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
@@ -550,11 +563,14 @@ function findSlot(dateStr,dur,wStart,wEnd){
 // Placement auto : site du jour → matin ; autre site → après-midi ; journée pleine → jour suivant
 function autoPlace(dateStr,site,dur){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
+  const r=rushInterval();
+  const mEnd = r?toMin(r.start):NOON;   // fin du matin = début du rush (11:45)
+  const aStart = r?toMin(r.end):NOON;   // début aprem = fin du rush (13:20)
   let d=dateStr;
   for(let k=0;k<7;k++){
     const base = baseSiteFor(d)===site;
-    const win1 = base?[open,NOON]:[NOON,close];   // fenêtre préférée
-    const win2 = base?[NOON,close]:[open,NOON];   // repli même jour
+    const win1 = base?[open,mEnd]:[aStart,close];   // fenêtre préférée
+    const win2 = base?[aStart,close]:[open,mEnd];   // repli même jour
     let s=findSlot(d,dur,win1[0],win1[1]), pref=true;
     if(s===null){ s=findSlot(d,dur,win2[0],win2[1]); pref=false; }
     if(s!==null) return {date:d,start:toHM(s),base,pref,sameDay:d===dateStr};
@@ -613,6 +629,14 @@ function freeRow(dateStr,it){
 }
 
 function jobRow(j){
+  if(j.source==="rush"){
+    const r=el("div","row rush");
+    r.innerHTML=`<div class="marker"></div>
+      <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
+      <div class="body"><div class="title">🍽 ${esc(j.title)}</div>
+      <div class="meta">Indisponible — coup de feu cuisine</div></div>`;
+    return r;
+  }
   const cls = j.priority?"prio" : j.status==="requested"?"req" : j.status==="confirmed"?"confirmed":"busy";
   const bSite=baseSiteFor(j.date);
   const offsite = bSite && j.site!==bSite;
@@ -856,7 +880,7 @@ function openEdit(j){
 /* ============================================================= PARAMÈTRES */
 function openSettings(){
   let sid=0; const nid=()=>"s"+(sid++);
-  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], newPin:"" };
+  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
   draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even"}; });
@@ -909,6 +933,17 @@ function renderSettings(draft){
     <div class="set-note">Se recréent automatiquement. Semaine affichée : n°${weekNum(State.weekStart)} (${weekNum(State.weekStart)%2===0?"paire":"impaire"}).</div>
     ${recHtml||`<div class="set-note">Aucune tâche pour l'instant.</div>`}
     <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
+    <div class="set-h">🍽 Rush du midi</div>
+    <div class="set-note">Créneau bloqué chaque jour (coup de feu cuisine). L'après-midi ne peut pas commencer avant l'heure de fin.</div>
+    <div class="set-row">
+      <label class="set-lbl"><input type="checkbox" id="set-rush-on" ${draft.rush.enabled?"checked":""}> Actif</label>
+    </div>
+    <div class="set-row">
+      <label class="set-lbl">Début</label><input id="set-rush-start" type="time" value="${draft.rush.start||"11:45"}">
+    </div>
+    <div class="set-row">
+      <label class="set-lbl">Fin</label><input id="set-rush-end" type="time" value="${draft.rush.end||"13:20"}">
+    </div>
     <div class="set-h">🔒 Code Responsable</div>
     <div class="set-note">Vide = code inchangé. Le code est haché (jamais stocké en clair) ; privilégie un code long/alphanumérique pour une vraie protection.</div>
     <div class="field"><input id="set-pin" type="text" autocomplete="off" placeholder="Nouveau code (facultatif)"></div>
@@ -932,6 +967,9 @@ function renderSettings(draft){
   $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:""});renderSettings(draft);};
   $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00",freq:1,parity:"even"});renderSettings(draft);};
   $("#set-cancel").onclick=closeSheet;
+  $("#set-rush-on").onchange=e=>{draft.rush.enabled=e.target.checked;};
+  $("#set-rush-start").onchange=e=>{draft.rush.start=e.target.value;};
+  $("#set-rush-end").onchange=e=>{draft.rush.end=e.target.value;};
   $("#set-pin").oninput=e=>{draft.newPin=e.target.value;};
   $("#set-save").onclick=()=>saveSettingsFromDraft(draft);
 }
@@ -941,6 +979,7 @@ async function saveSettingsFromDraft(draft){
   if(!names.length){toast("Ajoute au moins un site",true);return;}
   if(names.some(n=>!n)){toast("Un site est sans nom",true);return;}
   if(new Set(names).size!==names.length){toast("Deux sites ont le même nom",true);return;}
+  if(draft.rush.enabled && toMin(draft.rush.end)<=toMin(draft.rush.start)){toast("Rush : la fin doit être après le début",true);return;}
   const idToName={}; draft.sites.forEach((s,i)=>idToName[s.id]=names[i]);
   const renames=draft.sites.filter(s=>s.orig&&idToName[s.id]!==s.orig).map(s=>({from:s.orig,to:idToName[s.id]}));
 
@@ -950,6 +989,7 @@ async function saveSettingsFromDraft(draft){
       freq:r.freq===2?2:1,parity:r.freq===2?(r.parity==="odd"?"odd":"even"):"even"}));
 
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
+  SETTINGS.rush={enabled:!!draft.rush.enabled,start:draft.rush.start,end:draft.rush.end,label:SETTINGS.rush.label||"Rush cuisine"};
   if(draft.newPin&&draft.newPin.trim()) SETTINGS.pinHash=await sha256Hex(draft.newPin.trim());
 
   try{
