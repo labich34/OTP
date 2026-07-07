@@ -324,8 +324,8 @@ header.app{
 const CONFIG = {
 
   /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
-  SUPABASE_URL: "https://xtiuwzktevutvynqpyfo.supabase.co",          // ex: "https://xxxx.supabase.co"
-  SUPABASE_ANON_KEY: "sb_publishable___3wIK5wRTj5nCaPAKqLlA_djjqQK7D",     // clé "anon public" du projet
+  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
+  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
 
   /* --- 2. Alertes sur ton téléphone --- */
   //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
@@ -740,7 +740,7 @@ function openRequest(dateStr,startDefault,rangeEnd){
   sheet.innerHTML=`
     <h3>Proposer une intervention</h3>
     <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)} · créneau libre ${startDefault}–${rangeEnd}</div>
-    <div class="info-auto">ℹ️ Placement automatique : <b>matin</b> si c'est le site du jour, <b>après-midi</b> sinon. Le rush du midi est évité. Si la journée est pleine, le prochain jour ouvré est proposé.</div>
+    <div class="info-auto">ℹ️ Une intervention n'est placée le matin que si c'est le site du jour. Sinon elle va l'après-midi ; et si la journée est pleine, elle passe au lendemain.</div>
     <div class="field"><label>Site concerné</label>
       <select id="f-site">${SETTINGS.sites.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
     <div class="field"><label>Objet de l'intervention</label>
