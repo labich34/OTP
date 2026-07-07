@@ -35,10 +35,16 @@
   --header-2:#dcefe9;
   --radius:14px;
   --radius-sm:9px;
-  --shadow:0 1px 2px rgba(38,48,63,.05), 0 8px 24px -14px rgba(38,48,63,.22);
+  --shadow-sm:0 1px 2px rgba(38,48,63,.06);
+  --shadow:0 1px 2px rgba(38,48,63,.05), 0 10px 28px -16px rgba(38,48,63,.28);
+  --shadow-lg:0 24px 60px -28px rgba(38,48,63,.45);
+  --focus:0 0 0 3px rgba(28,143,129,.32);
 }
 *{box-sizing:border-box}
 html,body{margin:0}
+::selection{background:rgba(28,143,129,.22)}
+:focus-visible{outline:none;box-shadow:var(--focus);border-radius:8px}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important}}
 body{
   font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
   color:var(--ink); background:var(--paper);
@@ -56,19 +62,20 @@ header.app{
   box-shadow:0 6px 18px -14px rgba(38,48,63,.4);
 }
 .app-row{display:flex; align-items:center; gap:12px; max-width:1180px; margin:0 auto}
-.brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px}
-.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--free);box-shadow:0 0 0 4px rgba(31,138,91,.25)}
-.brand small{display:block;font-weight:500;font-size:11px;color:var(--ink-soft);letter-spacing:.3px}
+.brand{display:flex; align-items:center; gap:11px; font-weight:700; font-size:16px; letter-spacing:-.1px}
+.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--free);box-shadow:0 0 0 4px rgba(42,157,99,.22)}
+.brand small{display:block;font-weight:500;font-size:11px;color:var(--ink-soft);letter-spacing:.2px;margin-top:1px}
 .spacer{flex:1}
+.role-switch{display:inline-flex;padding:3px;gap:3px;background:rgba(28,143,129,.10);
+  border:1px solid rgba(28,143,129,.20);border-radius:999px}
 .role-pill{
-  display:inline-flex;align-items:center;gap:6px;background:rgba(28,143,129,.10);
-  border:1px solid rgba(28,143,129,.28); color:var(--brand-ink); padding:7px 11px;border-radius:999px;
-  font-size:13px;font-weight:600;cursor:pointer
+  display:inline-flex;align-items:center;gap:6px;background:transparent;border:none;
+  color:var(--brand-ink);padding:7px 13px;border-radius:999px;
+  font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap
 }
-.role-pill:hover{background:rgba(28,143,129,.18)}
-.role-switch{display:inline-flex;gap:8px}
-.role-pill.active{background:var(--brand);border-color:var(--brand);color:#fff}
-.role-pill.active:hover{background:var(--brand-ink)}
+.role-pill:hover{background:rgba(28,143,129,.12)}
+.role-pill.active{background:var(--brand);color:#fff;box-shadow:0 2px 8px -2px rgba(28,143,129,.5)}
+.role-pill.active:hover{background:var(--brand)}
 
 /* ---------- Barre outils ---------- */
 .toolbar{
@@ -79,15 +86,18 @@ header.app{
 .btn{
   font:inherit;font-weight:600;font-size:14px;cursor:pointer;
   border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
-  padding:9px 13px;border-radius:var(--radius-sm);line-height:1;transition:.15s
+  padding:9px 13px;border-radius:var(--radius-sm);line-height:1;
+  transition:border-color .15s, background .15s, box-shadow .15s, transform .1s
 }
 .btn:hover{border-color:var(--ink-soft)}
 .btn:active{transform:translateY(1px)}
 .btn.icon{padding:9px 12px}
-.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
-.btn.primary:hover{background:var(--brand-ink)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:0 4px 12px -4px rgba(28,143,129,.5)}
+.btn.primary:hover{background:var(--brand-ink);border-color:var(--brand-ink)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--ink-soft)}
-.btn.danger{color:var(--prio);border-color:var(--prio)}
+.btn.ghost:hover{background:rgba(38,48,63,.05);border-color:transparent}
+.btn.danger{color:var(--prio);border-color:var(--prio);background:transparent}
+.btn.danger:hover{background:var(--prio-bg)}
 .btn.small{padding:6px 10px;font-size:13px}
 .week-label{font-weight:700;font-size:15px;min-width:150px;text-align:center}
 .week-label span{display:block;font-size:11px;font-weight:500;color:var(--ink-soft)}
@@ -105,6 +115,8 @@ header.app{
 .chip{width:11px;height:11px;border-radius:3px;display:inline-block}
 .chip.free{background:var(--free)} .chip.busy{background:var(--busy)}
 .chip.req{background:var(--req)} .chip.prio{background:var(--prio)}
+.chip.confirmed{background:var(--brand)}
+.chip.rush{background:repeating-linear-gradient(45deg,#cdbf9f,#cdbf9f 3px,#b9a986 3px,#b9a986 6px)}
 
 /* ---------- Grille semaine ---------- */
 .week{
@@ -115,50 +127,57 @@ header.app{
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
   overflow:hidden;box-shadow:var(--shadow)
 }
-.day.today{border-color:#e8ac52;background:#fdf3dd;box-shadow:0 0 0 1px rgba(232,172,82,.35), var(--shadow)}
+.day.today{border-color:#e8ac52;background:#fdf3dd;box-shadow:0 0 0 1px rgba(232,172,82,.4), var(--shadow)}
 .day-head{
-  display:flex;align-items:baseline;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;padding:13px 15px;border-bottom:1px solid var(--line);
   background:linear-gradient(var(--surface),#f2ead6)
 }
 .day.today .day-head{background:linear-gradient(#fdeec7,#fbe4b1);border-bottom-color:#f0d194}
 .day.today .badge{color:#9a6410;background:#fbe4b1}
-.day-head .dname{font-weight:700;font-size:15px;text-transform:capitalize}
-.day-head .ddate{font-size:12.5px;font-weight:700;color:var(--ink)}
+.day-head .dname{font-weight:700;font-size:15px;text-transform:capitalize;letter-spacing:-.2px}
+.day-head .ddate{font-size:12.5px;font-weight:700;color:var(--ink);opacity:.72}
 .day-head .badge{margin-left:auto;font-size:11px;font-weight:700;color:var(--brand);background:var(--free-bg);
-  padding:3px 8px;border-radius:999px}
+  padding:3px 9px;border-radius:999px;letter-spacing:.2px}
 .slots{padding:8px}
-.day-site{margin:2px 14px 8px;padding:6px 10px;border-radius:8px;font-size:12px;
-  background:rgba(28,143,129,.10);color:var(--brand-ink);border:1px solid rgba(28,143,129,.25)}
+.day-site{margin:2px 15px 8px;padding:7px 11px;border-radius:9px;font-size:12px;font-weight:500;
+  background:rgba(28,143,129,.10);color:var(--brand-ink);border:1px solid rgba(28,143,129,.22)}
 .chip-move{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;
-  background:var(--req-bg);color:var(--req);border:1px solid #f0dcab;border-radius:999px;padding:1px 7px;margin-left:6px}
+  background:var(--req-bg);color:var(--req);border:1px solid #f0dcab;border-radius:999px;padding:1px 8px;margin-left:6px}
 .reco{color:var(--free);font-weight:600}
 .info-auto{background:#eaf3ff;border:1px solid #cfe0f7;color:#2c4a6e;border-radius:10px;
   padding:8px 10px;font-size:12px;line-height:1.35;margin-bottom:12px}
-.set-h{font-weight:700;margin:16px 0 6px;color:var(--brand-ink);border-top:1px solid var(--line);padding-top:12px}
-.set-note{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+.set-h{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.6px;
+  margin:22px 0 4px;color:var(--brand-ink);border-top:1px solid var(--line);padding-top:16px;
+  display:flex;align-items:center;gap:7px}
+.set-h:first-of-type{border-top:none;padding-top:4px;margin-top:6px}
+.set-note{font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;line-height:1.4}
 .set-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
-.set-row input,.set-row select{flex:1;min-width:0;padding:9px 10px;border:1px solid var(--line-strong);
-  border-radius:9px;background:var(--surface);color:var(--ink);font-size:14px}
+.set-row input,.set-row select{flex:1;min-width:0;padding:10px 11px;border:1px solid var(--line-strong);
+  border-radius:9px;background:#fffdf9;color:var(--ink);font:inherit;font-size:14px;transition:border-color .15s, box-shadow .15s}
+.set-row input:focus,.set-row select:focus{outline:none;border-color:var(--brand);box-shadow:var(--focus)}
 .set-row input[type=time]{flex:0 0 auto}
-.set-lbl{flex:0 0 82px;font-size:13px;color:var(--ink)}
-.set-card{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(0,0,0,.02)}
+.set-row input[type=checkbox]{flex:0 0 auto;width:17px;height:17px;accent-color:var(--brand);margin-right:7px}
+.set-lbl{flex:0 0 82px;font-size:13px;font-weight:500;color:var(--ink);display:flex;align-items:center}
+.set-card{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;
+  background:#fffdf9;box-shadow:var(--shadow-sm)}
 .set-site-del,.set-rec-del{flex:0 0 auto}
 .row.rush{background:repeating-linear-gradient(45deg,#efe9dd,#efe9dd 8px,#e7e0d0 8px,#e7e0d0 16px);border-color:var(--line-strong);color:var(--ink-soft)}
 .row.rush .marker{width:4px;border-radius:3px;background:var(--ink-soft);flex:none}
 .row.rush .title{color:var(--ink)}
 .row{
-  display:flex;gap:10px;align-items:stretch;padding:9px 8px;border-radius:var(--radius-sm);
-  border:1px solid transparent
+  display:flex;gap:10px;align-items:stretch;padding:10px 9px;border-radius:var(--radius-sm);
+  border:1px solid transparent;transition:background .15s, border-color .15s, transform .12s
 }
 .row .time{width:96px;flex:none;color:var(--ink-soft);font-size:12.5px;padding-top:1px}
 .row .body{flex:1;min-width:0}
 .row .title{font-weight:600;font-size:14px;line-height:1.25}
-.row .meta{font-size:12px;color:var(--ink-soft);margin-top:2px}
+.row .meta{font-size:12px;color:var(--ink-soft);margin-top:3px}
 .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;margin-right:6px}
 
 /* états */
-.row.free{cursor:pointer;background:var(--free-bg);border-color:#c9e8d5}
-.row.free:hover{background:#d8f0e0;border-color:#a6d7bc}
+.row.free{cursor:pointer;background:var(--free-bg);border:1px dashed #a6d7bc}
+.row.free:hover{background:#d8f0e0;border-color:var(--free);transform:translateY(-1px)}
+.row.free:active{transform:translateY(0)}
 .row.free .title{color:var(--free)}
 .row.busy{background:var(--busy-bg);border-color:#f3c3c3}
 .row.busy .marker{width:4px;border-radius:3px;background:var(--busy);flex:none}
@@ -190,7 +209,7 @@ header.app{
 @media(min-width:640px){.overlay{align-items:center}}
 .sheet{
   background:var(--surface);width:100%;max-width:480px;border-radius:18px 18px 0 0;
-  padding:18px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.3);
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:var(--shadow-lg);
   max-height:92vh;overflow:auto;animation:rise .22s ease
 }
 @media(min-width:640px){.sheet{border-radius:18px;animation:pop .18s ease}}
@@ -202,8 +221,9 @@ header.app{
 .field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:5px}
 .field input,.field select,.field textarea{
   width:100%;font:inherit;font-size:15px;padding:11px 12px;border:1px solid var(--line-strong);
-  border-radius:10px;background:var(--surface);color:var(--ink)
+  border-radius:10px;background:#fffdf9;color:var(--ink);transition:border-color .15s, box-shadow .15s
 }
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--brand);box-shadow:var(--focus)}
 .field textarea{resize:vertical;min-height:58px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .prio-box{
@@ -277,10 +297,12 @@ header.app{
 </div>
 
 <div class="legend">
-  <b><span class="chip free"></span> Créneau libre</b>
-  <b><span class="chip busy"></span> Occupé / planifié</b>
-  <b><span class="chip req"></span> Demande en attente</b>
+  <b><span class="chip free"></span> Libre</b>
+  <b><span class="chip busy"></span> Occupé</b>
+  <b><span class="chip confirmed"></span> Confirmé</b>
+  <b><span class="chip req"></span> En attente</b>
   <b><span class="chip prio"></span> Prioritaire (Thibaut)</b>
+  <b><span class="chip rush"></span> Rush midi</b>
 </div>
 
 <div class="inbox" id="inbox"></div>
@@ -303,8 +325,9 @@ header.app{
 const CONFIG = {
 
   /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
-  SUPABASE_URL: "https://xtiuwzktevutvynqpyfo.supabase.co",
-  SUPABASE_ANON_KEY: "sb_publishable___3wIK5wRTj5nCaPAKqLlA_djjqQK7D",
+  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
+  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
+
   /* --- 2. Alertes sur ton téléphone --- */
   //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
   NTFY_TOPIC: "",            // ex: "fabien-planning-x7q2z"  (choisis un mot secret)
@@ -330,6 +353,15 @@ const CONFIG = {
   /* --- 5c. Rush du midi (coup de feu cuisine) : créneau bloqué chaque jour ---
      Réglable dans l'appli : Responsable > ⚙ Paramètres > Rush du midi.          */
   RUSH: { enabled: true, start: "11:45", end: "13:20", label: "Rush cuisine" },
+
+  /* --- 5d. Modèles de tâches récurrentes (menu déroulant dans Paramètres) ---
+     Pré-remplit l'objet et la durée. Ajoute/édite librement.                  */
+  TASK_PRESETS: [
+    { label: "Nettoyage machine à glace — grosse (3 h)", title: "Nettoyage machine à glace (grosse)", durMin: 180  },
+    { label: "Nettoyage machine à glace — petite (2 h)", title: "Nettoyage machine à glace (petite)", durMin: 120  },
+    { label: "Nettoyage PEP (durée variable)",           title: "Nettoyage PEP",                       durMin: null },
+    { label: "Livraison (durée variable)",                title: "Livraison",                           durMin: null },
+  ],
 
   /* --- 6. Ton planning RÉCURRENT (se régénère chaque semaine automatiquement) ---
      weekday : 1=Lundi … 6=Samedi   |   heures au format "HH:MM"                  */
@@ -900,6 +932,12 @@ function renderSettings(draft){
       <select class="set-base" data-w="${w}">${siteOpts(draft.baseSite[w]||"")}</select></div>`).join("");
   const recHtml=draft.recurring.map((r,i)=>`
     <div class="set-card">
+      <div class="set-row">
+        <select class="set-rec-preset" data-i="${i}">
+          <option value="">＋ Choisir un modèle…</option>
+          ${CONFIG.TASK_PRESETS.map((p,pi)=>`<option value="${pi}">${esc(p.label)}</option>`).join("")}
+        </select>
+      </div>
       <div class="set-row"><input class="set-rec-title" data-i="${i}" value="${esc(r.title)}" placeholder="Objet (ex : maintenance AC)"></div>
       <div class="set-row">
         <select class="set-rec-site" data-i="${i}">${siteOpts(r.siteId)}</select>
@@ -929,7 +967,7 @@ function renderSettings(draft){
     <div class="set-note">Où tu es posté chaque jour (regroupe le travail le matin).</div>
     ${baseHtml}
     <div class="set-h">🔁 Tâches récurrentes</div>
-    <div class="set-note">Se recréent automatiquement. Semaine affichée : n°${weekNum(State.weekStart)} (${weekNum(State.weekStart)%2===0?"paire":"impaire"}).</div>
+    <div class="set-note">Choisis un modèle pour pré-remplir objet + durée, puis règle jour et fréquence. Astuce machine à glace : crée deux tâches — « grosse (3 h) » en semaines paires, « petite (2 h) » en semaines impaires. Semaine affichée : n°${weekNum(State.weekStart)} (${weekNum(State.weekStart)%2===0?"paire":"impaire"}).</div>
     ${recHtml||`<div class="set-note">Aucune tâche pour l'instant.</div>`}
     <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
     <div class="set-h">🍽 Rush du midi</div>
@@ -954,6 +992,13 @@ function renderSettings(draft){
 
   sheet.querySelectorAll(".set-site-name").forEach(o=>o.oninput=()=>{draft.sites[+o.dataset.i].name=o.value;});
   sheet.querySelectorAll(".set-base").forEach(o=>o.onchange=()=>{draft.baseSite[+o.dataset.w]=o.value;});
+  sheet.querySelectorAll(".set-rec-preset").forEach(o=>o.onchange=()=>{
+    const p=CONFIG.TASK_PRESETS[+o.value]; if(!p) return;
+    const r=draft.recurring[+o.dataset.i];
+    r.title=p.title;
+    if(p.durMin) r.end=toHM(toMin(r.start)+p.durMin);
+    renderSettings(draft);
+  });
   sheet.querySelectorAll(".set-rec-title").forEach(o=>o.oninput=()=>{draft.recurring[+o.dataset.i].title=o.value;});
   sheet.querySelectorAll(".set-rec-site").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].siteId=o.value;});
   sheet.querySelectorAll(".set-rec-wd").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].weekday=+o.value;});
