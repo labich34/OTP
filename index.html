@@ -301,7 +301,6 @@ header.app{
   <b><span class="chip busy"></span> Occupé</b>
   <b><span class="chip confirmed"></span> Confirmé</b>
   <b><span class="chip req"></span> En attente</b>
-  <b><span class="chip prio"></span> Prioritaire (Thibaut)</b>
   <b><span class="chip rush"></span> Rush midi</b>
 </div>
 
@@ -325,8 +324,8 @@ header.app{
 const CONFIG = {
 
   /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
-  SUPABASE_URL: "https://xtiuwzktevutvynqpyfo.supabase.co",          // ex: "https://xxxx.supabase.co"
-  SUPABASE_ANON_KEY: "sb_publishable___3wIK5wRTj5nCaPAKqLlA_djjqQK7D",     // clé "anon public" du projet
+  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
+  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
 
   /* --- 2. Alertes sur ton téléphone --- */
   //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
@@ -348,7 +347,7 @@ const CONFIG = {
   BASE_SITE: { 1:"Resto Gland", 2:"Resto Nyon Gare", 3:"Resto Signy", 4:"Crèche La Côte", 5:"Resto Nyon Gare" },
 
   /* --- 5. Horaires de travail affichés --- */
-  HOURS: { start: 7, end: 18, slotMin: 30, days: 5 }, // Lun→Ven (samedi/dimanche retirés)
+  HOURS: { start: 7, end: 16, slotMin: 30, days: 5 }, // 07h→16h, Lun→Ven
 
   /* --- 5c. Rush du midi (coup de feu cuisine) : créneau bloqué chaque jour ---
      Réglable dans l'appli : Responsable > ⚙ Paramètres > Rush du midi.          */
@@ -741,24 +740,15 @@ function openRequest(dateStr,startDefault,rangeEnd){
   sheet.innerHTML=`
     <h3>Proposer une intervention</h3>
     <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)} · créneau libre ${startDefault}–${rangeEnd}</div>
-    <div class="info-auto">ℹ️ Placement auto : <b>matin</b> si c'est le site du jour, <b>après-midi</b> sinon. Journée pleine → proposé au prochain jour. Cochez « Thibaut » pour imposer l'heure exacte.</div>
+    <div class="info-auto">ℹ️ Placement automatique : <b>matin</b> si c'est le site du jour, <b>après-midi</b> sinon. Le rush du midi est évité. Si la journée est pleine, le prochain jour ouvré est proposé.</div>
     <div class="field"><label>Site concerné</label>
       <select id="f-site">${SETTINGS.sites.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
     <div class="field"><label>Objet de l'intervention</label>
       <input id="f-title" placeholder="Ex : fuite bac à graisse, néon HS, frigo en alarme…"></div>
-    <div class="row2">
-      <div class="field"><label>Heure souhaitée (indicatif)</label><input id="f-start" type="time" value="${startDefault}"></div>
-      <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
-    </div>
+    <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
     <div class="field"><label>Précisions (facultatif)</label>
       <textarea id="f-notes" placeholder="Détails utiles, niveau d'urgence, matériel concerné…"></textarea></div>
     <div class="field"><label>Votre nom</label><input id="f-by" placeholder="Directeur / site"></div>
-
-    <label class="prio-box">
-      <input type="checkbox" id="f-prio">
-      <span><span class="t">Demande de Thibaut (prioritaire)</span>
-      <span class="d">À cocher uniquement pour une demande de la direction. Elle passe avant tout : si le créneau est occupé, vous pourrez déplacer l'intervention existante.</span></span>
-    </label>
 
     <div class="sheet-actions">
       <button class="btn" id="f-cancel">Annuler</button>
@@ -772,17 +762,8 @@ function openRequest(dateStr,startDefault,rangeEnd){
     if(!title){toast("Indique l'objet de l'intervention",true);return;}
     const dur=parseInt($("#f-dur").value,10);
     const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim()||"Directeur";
-    const prio=$("#f-prio").checked;
 
-    // Prioritaire (Thibaut) : heure exacte + déplacement de l'existant si conflit
-    if(prio){
-      const start=$("#f-start").value, end=toHM(toMin(start)+dur);
-      const clash=busyRowsOn(dateStr).find(r=>toMin(r.start)<toMin(end) && toMin(start)<toMin(r.end));
-      if(clash) return openPriorityMove(dateStr,{title,start,end,site,notes,by},clash);
-      return submitRequest({date:dateStr,site,title,start,end,notes,by,prio:true,status:"requested"});
-    }
-
-    // Demande normale : placement automatique selon le site du jour
+    // Placement automatique selon le site du jour
     const p=autoPlace(dateStr,site,dur);
     if(!p){ toast("Aucun créneau libre dans les prochains jours",true); return; }
     const end=toHM(toMin(p.start)+dur);
