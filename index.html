@@ -1387,7 +1387,9 @@ function bindUI(){
     const v=e.target.value; if(!v) return;
     const [y,m]=v.split("-").map(Number);
     if(!y||!m) return;
-    State.weekStart=mondayOf(new Date(y,m-1,1));   // 1ère semaine du mois choisi
+    let ws=mondayOf(new Date(y,m-1,1));
+    if(ws.getMonth()!==m-1) ws=addDays(ws,7);   // éviter de retomber sur le mois précédent
+    State.weekStart=ws;
     load();
   };
   $("#addBtn").onclick=()=>openEdit(null);
