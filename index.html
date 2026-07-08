@@ -327,7 +327,7 @@ header.app{
     <div class="week-label" id="weekLabel">—<span id="weekSub"></span></div>
     <button class="btn icon" id="nextWeek" aria-label="Semaine suivante">›</button>
     <button class="btn ghost small" id="todayBtn">Aujourd'hui</button>
-    <input type="month" class="month-pick" id="monthPick" aria-label="Aller à un mois de l'année" title="Aller à un mois">
+    <select class="month-pick" id="monthPick" aria-label="Aller à un mois de l'année" title="Aller à un mois"></select>
   </div>
   <span class="spacer"></span>
   <button class="btn ghost small" id="tourBtn">🚗 Tournée</button>
@@ -406,19 +406,14 @@ const CONFIG = {
     { label: "Livraison (durée variable)",                title: "Livraison",                           durMin: null },
   ],
 
-  /* --- 6. Ton planning RÉCURRENT (se régénère chaque semaine automatiquement) ---
-     weekday : 1=Lundi … 6=Samedi   |   heures au format "HH:MM"                  */
-  RECURRING: [
-    { site:"Resto Nyon Gare", title:"Contrôle équipements cuisine", weekday:1, start:"08:00", end:"09:30" },
-    { site:"Resto Gland",     title:"Maintenance préventive AC",     weekday:2, start:"09:00", end:"11:00" },
-    { site:"Resto Signy",     title:"Tournée technique hebdo",       weekday:3, start:"08:30", end:"10:30" },
-    { site:"Crèche La Côte",  title:"Vérif sécurité + petits travaux",weekday:4,start:"14:00", end:"16:00" },
-    { site:"Resto Nyon Gare", title:"Confirmations Safely.swiss",    weekday:5, start:"10:00", end:"11:00" },
-  ],
+  /* --- 6. Planning RÉCURRENT — vide par défaut, à saisir dans l'appli ---
+     Responsable > ⚙ Paramètres > Tâches récurrentes.                        */
+  RECURRING: [],
 };
 /* ======================= FIN DE LA ZONE À ÉDITER =========================== */
 
 const DAYS_FR = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+const MONTHS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 const SLOT = CONFIG.HOURS.slotMin;
 // Clés Supabase / ntfy : fichier OU localStorage (persistent entre déploiements)
 try{
@@ -1049,7 +1044,10 @@ function renderSettings(draft){
     <div class="set-h">🔁 Tâches récurrentes</div>
     <div class="set-note">Choisis un modèle pour pré-remplir objet + durée, puis règle jour et fréquence. Astuce machine à glace : crée deux tâches — « grosse (3 h) » en semaines paires, « petite (2 h) » en semaines impaires. Semaine affichée : n°${weekNum(State.weekStart)} (${weekNum(State.weekStart)%2===0?"paire":"impaire"}).</div>
     ${recHtml||`<div class="set-note">Aucune tâche pour l'instant.</div>`}
-    <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
+    <div class="set-row" style="gap:8px">
+      <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
+      ${draft.recurring.length?`<button class="btn small danger" id="set-clear-rec">🗑 Tout effacer</button>`:``}
+    </div>
     <div class="set-h">🍽 Rush du midi</div>
     <div class="set-note">Créneau bloqué chaque jour (coup de feu cuisine). L'après-midi ne peut pas commencer avant l'heure de fin.</div>
     <div class="set-row">
@@ -1120,6 +1118,7 @@ function renderSettings(draft){
   sheet.querySelectorAll(".set-rec-del").forEach(b=>b.onclick=()=>{draft.recurring.splice(+b.dataset.i,1);renderSettings(draft);});
   $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:""});renderSettings(draft);};
   $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00",freq:1,parity:"even"});renderSettings(draft);};
+  { const cr=$("#set-clear-rec"); if(cr) cr.onclick=()=>{ if(confirm("Effacer toutes les tâches récurrentes ? (à confirmer par Enregistrer)")){ draft.recurring=[]; renderSettings(draft); } }; }
   $("#set-cancel").onclick=closeSheet;
   $("#set-rush-on").onchange=e=>{draft.rush.enabled=e.target.checked;};
   $("#set-rush-start").onchange=e=>{draft.rush.start=e.target.value;};
@@ -1371,10 +1370,19 @@ function bindSiteFilter(){
   sel.innerHTML=`<option value="__all__">Tous les sites</option>`+SETTINGS.sites.map(s=>`<option>${esc(s)}</option>`).join("");
   sel.value=[...sel.options].some(o=>o.value===cur)?cur:"__all__";
 }
+function bindMonthPick(){
+  const sel=$("#monthPick"); if(!sel) return;
+  const y0=new Date().getFullYear()-1;
+  let html="";
+  for(let y=y0;y<=y0+4;y++) for(let m=1;m<=12;m++)
+    html+=`<option value="${y}-${pad(m)}">${MONTHS_FR[m-1]} ${y}</option>`;
+  sel.innerHTML=html;
+}
 function bindUI(){
   $("#prevWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,-7);load();};
   $("#nextWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,7);load();};
   $("#todayBtn").onclick=()=>{State.weekStart=mondayOf(new Date());load();};
+  bindMonthPick();
   $("#monthPick").onchange=e=>{
     const v=e.target.value; if(!v) return;
     const [y,m]=v.split("-").map(Number);
