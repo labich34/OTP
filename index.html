@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Planning Tech" />
@@ -29,6 +29,8 @@
   --busy-bg:#fce3e3;
   --req:#c17d14;         /* demande en attente — ambre */
   --req-bg:#fdf2dc;
+  --confirmed:#2f6cae;   /* confirmé — bleu (bien distinct du vert « libre ») */
+  --confirmed-bg:#e7effb;
   --prio:#e0603f;        /* prioritaire Thibaut — corail chaleureux */
   --prio-bg:#fce9e2;
   --header-1:#eaf6f2;    /* en-tête clair (teal très pâle) */
@@ -50,8 +52,15 @@ body{
   color:var(--ink); background:var(--paper);
   -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
   padding-bottom:env(safe-area-inset-bottom);
+  touch-action:manipulation;              /* coupe le double-tap zoom, garde le défilement */
+  -webkit-text-size-adjust:100%;          /* pas de zoom auto du texte */
 }
 .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+#loadbar{position:sticky;top:0;z-index:29;height:3px;background:transparent;overflow:hidden}
+#loadbar.on::before{content:"";position:absolute;inset:0;width:40%;
+  background:linear-gradient(90deg,transparent,var(--brand),transparent);
+  animation:load 1s linear infinite}
+@keyframes load{from{transform:translateX(-120%)}to{transform:translateX(320%)}}
 
 /* ---------- En-tête ---------- */
 header.app{
@@ -82,7 +91,13 @@ header.app{
   max-width:1180px;margin:0 auto;padding:14px 16px 4px;
   display:flex;align-items:center;gap:10px;flex-wrap:wrap
 }
-.week-nav{display:flex;align-items:center;gap:6px}
+.week-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.month-pick{font:inherit;font-size:13px;font-weight:600;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-sm);
+  padding:7px 10px;cursor:pointer;transition:border-color .15s, box-shadow .15s}
+.month-pick:hover{border-color:var(--ink-soft)}
+.month-pick:focus{outline:none;border-color:var(--brand);box-shadow:var(--focus)}
+.month-pick::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.6}
 .btn{
   font:inherit;font-weight:600;font-size:14px;cursor:pointer;
   border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
@@ -115,7 +130,7 @@ header.app{
 .chip{width:11px;height:11px;border-radius:3px;display:inline-block}
 .chip.free{background:var(--free)} .chip.busy{background:var(--busy)}
 .chip.req{background:var(--req)} .chip.prio{background:var(--prio)}
-.chip.confirmed{background:var(--brand)}
+.chip.confirmed{background:var(--confirmed)}
 .chip.rush{background:repeating-linear-gradient(45deg,#cdbf9f,#cdbf9f 3px,#b9a986 3px,#b9a986 6px)}
 
 /* ---------- Grille semaine ---------- */
@@ -164,6 +179,29 @@ header.app{
 .row.rush{background:repeating-linear-gradient(45deg,#efe9dd,#efe9dd 8px,#e7e0d0 8px,#e7e0d0 16px);border-color:var(--line-strong);color:var(--ink-soft)}
 .row.rush .marker{width:4px;border-radius:3px;background:var(--ink-soft);flex:none}
 .row.rush .title{color:var(--ink)}
+.row.off{background:#eee9f3;border:1px solid #ddd3ea;color:#6a5c82}
+.row.off .marker{width:4px;border-radius:3px;background:#8f7fb0;flex:none}
+.row.off .title{color:#5b4d78}
+.rush-toggle{margin:0 15px 8px;font-size:12.5px;color:var(--ink-soft)}
+.rush-toggle label{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+.rush-toggle input{width:16px;height:16px;accent-color:var(--brand)}
+.rush-toggle.off{color:var(--req)}
+/* Tournée */
+.tour-site{border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0;background:#fffdf9;box-shadow:var(--shadow-sm)}
+.tour-site-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.tour-site-h .btn{margin-left:auto}
+.tour-item{font-size:14px;padding:6px 0;border-top:1px dashed var(--line)}
+.tour-item:first-of-type{border-top:none}
+.tour-item .mono{color:var(--ink-soft);margin-right:6px}
+/* Heatmap */
+.hm-grid-h,.hm-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.hm-grid-h{margin:8px 0 4px;font-size:11px;font-weight:700;color:var(--ink-soft);text-align:center}
+.hm-cell{position:relative;aspect-ratio:1;border:1px solid var(--line);border-radius:9px;
+  background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0}
+.hm-cell.empty{border:none;cursor:default}
+.hm-cell.weekend{opacity:.4;cursor:default}
+.hm-cell .hm-n{font-size:12px;font-weight:600;color:var(--ink)}
+.hm-cell .hm-c{font-size:10px;font-weight:700;color:var(--brand-ink)}
 .row{
   display:flex;gap:10px;align-items:stretch;padding:10px 9px;border-radius:var(--radius-sm);
   border:1px solid transparent;transition:background .15s, border-color .15s, transform .12s
@@ -185,9 +223,10 @@ header.app{
 .row.req .marker{background:var(--req)}
 .row.prio{background:var(--prio-bg);border-color:#f4c9bd}
 .row.prio .marker{background:var(--prio)}
-.row.confirmed .marker{background:var(--brand)}
+.row.confirmed{background:var(--confirmed-bg);border-color:#c9d9f2}
+.row.confirmed .marker{background:var(--confirmed)}
 .state{font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
-.state.req{color:var(--req)} .state.prio{color:var(--prio)} .state.confirmed{color:var(--brand)}
+.state.req{color:var(--req)} .state.prio{color:var(--prio)} .state.confirmed{color:var(--confirmed)}
 .admin-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .empty-day{padding:18px 14px;color:var(--ink-soft);font-size:13px;text-align:center}
 
@@ -276,6 +315,7 @@ header.app{
     </div>
   </div>
 </header>
+<div id="loadbar" aria-hidden="true"></div>
 
 <div class="banner" id="demoBanner" style="display:none">
   <div class="b">⚙️ <b>Mode démonstration</b> — données locales à cet appareil. Renseigne Supabase en haut du fichier pour le partage temps réel entre tous les sites.</div>
@@ -287,8 +327,12 @@ header.app{
     <div class="week-label" id="weekLabel">—<span id="weekSub"></span></div>
     <button class="btn icon" id="nextWeek" aria-label="Semaine suivante">›</button>
     <button class="btn ghost small" id="todayBtn">Aujourd'hui</button>
+    <input type="month" class="month-pick" id="monthPick" aria-label="Aller à un mois de l'année" title="Aller à un mois">
   </div>
   <span class="spacer"></span>
+  <button class="btn ghost small" id="tourBtn">🚗 Tournée</button>
+  <button class="btn ghost small" id="monthBtn">📊 Mois</button>
+  <button class="btn ghost small" id="myReqBtn" style="display:none">📋 Mes demandes</button>
   <div class="site-select">
     <select id="siteFilter" aria-label="Filtrer par site"></select>
   </div>
@@ -324,8 +368,8 @@ header.app{
 const CONFIG = {
 
   /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
-  SUPABASE_URL: "https://xtiuwzktevutvynqpyfo.supabase.co",          // ex: "https://xxxx.supabase.co"
-  SUPABASE_ANON_KEY: "sb_publishable___3wIK5wRTj5nCaPAKqLlA_djjqQK7D",     // clé "anon public" du projet
+  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
+  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
 
   /* --- 2. Alertes sur ton téléphone --- */
   //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
@@ -376,10 +420,22 @@ const CONFIG = {
 
 const DAYS_FR = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
 const SLOT = CONFIG.HOURS.slotMin;
+// Clés Supabase / ntfy : fichier OU localStorage (persistent entre déploiements)
+try{
+  const sk=JSON.parse(localStorage.getItem("planning_supakeys")||"null");
+  if(sk){ if(!CONFIG.SUPABASE_URL&&sk.url)CONFIG.SUPABASE_URL=sk.url; if(!CONFIG.SUPABASE_ANON_KEY&&sk.key)CONFIG.SUPABASE_ANON_KEY=sk.key; }
+  const nt=localStorage.getItem("planning_ntfy"); if(nt&&!CONFIG.NTFY_TOPIC)CONFIG.NTFY_TOPIC=nt;
+}catch(e){}
 const supaOn = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);
 </script>
 
 <script>
+/* --- Anti-zoom mobile : bloque le pincer-zoomer (iOS ignore user-scalable=no).
+   Le double-tap est déjà neutralisé par touch-action:manipulation ; on ne touche
+   pas à touchend pour ne pas casser les clics sur les créneaux/boutons.        */
+["gesturestart","gesturechange","gestureend"].forEach(ev=>
+  document.addEventListener(ev, e=>e.preventDefault(), {passive:false}));
+
 /* ------------------------------------------------------------------ Helpers */
 const $=(s,r=document)=>r.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -411,6 +467,7 @@ const SETTINGS = {
   recurring: CONFIG.RECURRING.map(x=>({...x})),
   baseSite: {...CONFIG.BASE_SITE},
   rush: {...CONFIG.RUSH},
+  rushOff: [],           // jours (YYYY-MM-DD) où le rush est retiré (gros chantier)
   pinHash: ""            // vide => on utilise l'empreinte du fichier (CONFIG.ADMIN_PIN_HASH)
 };
 async function sha256Hex(s){
@@ -423,6 +480,7 @@ function applySettings(d){
   if(Array.isArray(d.recurring)) SETTINGS.recurring=d.recurring.map(x=>({...x}));
   if(d.baseSite&&typeof d.baseSite==="object") SETTINGS.baseSite={...d.baseSite};
   if(d.rush&&typeof d.rush==="object") SETTINGS.rush={...CONFIG.RUSH,...d.rush};
+  if(Array.isArray(d.rushOff)) SETTINGS.rushOff=d.rushOff.slice();
   if(typeof d.pinHash==="string") SETTINGS.pinHash=d.pinHash;
 }
 async function loadSettings(){
@@ -437,7 +495,7 @@ async function loadSettings(){
   }catch(e){ console.warn("loadSettings",e); }
 }
 async function saveSettings(){
-  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,pinHash:SETTINGS.pinHash};
+  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
   if(SB){
     const {error}=await SB.from("app_settings").upsert({id:1,data:payload,updated_at:new Date().toISOString()});
     if(error) throw error;
@@ -467,6 +525,10 @@ function makeStore(){
         const {data,error}=await SB.from("interventions").select("*").gte("date",from).lte("date",to);
         if(error)throw error; return data||[];
       },
+      async range(fromISO,toISO){
+        const {data,error}=await SB.from("interventions").select("*").gte("date",fromISO).lte("date",toISO);
+        if(error)throw error; return data||[];
+      },
       async insert(r){const{data,error}=await SB.from("interventions").insert(r).select().single();if(error)throw error;return data;},
       async update(id,p){const{error}=await SB.from("interventions").update(p).eq("id",id);if(error)throw error;},
       async remove(id){const{error}=await SB.from("interventions").delete().eq("id",id);if(error)throw error;},
@@ -483,6 +545,7 @@ function makeStore(){
     _read(){try{return JSON.parse(localStorage.getItem("planning_iv")||"[]")}catch{return[]}},
     _write(a){localStorage.setItem("planning_iv",JSON.stringify(a));},
     async list(ws){const from=iso(ws),to=iso(addDays(ws,6));return this._read().filter(r=>r.date>=from&&r.date<=to);},
+    async range(fromISO,toISO){return this._read().filter(r=>r.date>=fromISO&&r.date<=toISO);},
     async insert(r){const a=this._read();r.id="loc_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);a.push(r);this._write(a);return r;},
     async update(id,p){const a=this._read();const i=a.findIndex(x=>x.id===id);if(i>=0){Object.assign(a[i],p);this._write(a);}},
     async remove(id){this._write(this._read().filter(x=>x.id!==id));},
@@ -514,25 +577,34 @@ async function materialize(ws,existing){
 
 /* ------------------------------------------------------------- Notifications */
 async function notify(title,body){
-  const tasks=[];
+  const tasks=[]; const appUrl=location.origin+location.pathname;
   if(CONFIG.NTFY_TOPIC){
     tasks.push(fetch("https://ntfy.sh/"+CONFIG.NTFY_TOPIC,{method:"POST",
-      headers:{"Title":encodeURIComponent(title),"Tags":"wrench","Priority":"high"},body}).catch(()=>{}));
+      headers:{"Title":encodeURIComponent(title),"Tags":"wrench","Priority":"high","Click":appUrl},
+      body}).catch(()=>{}));
   }
   if(CONFIG.N8N_WEBHOOK){
     tasks.push(fetch(CONFIG.N8N_WEBHOOK,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({title,body,at:new Date().toISOString()})}).catch(()=>{}));
+      body:JSON.stringify({title,body,url:appUrl,at:new Date().toISOString()})}).catch(()=>{}));
   }
   await Promise.allSettled(tasks);
 }
 
 /* =============================================================== CHARGEMENT */
 async function load(){
-  let rows=await Store.list(State.weekStart);
-  const created=await materialize(State.weekStart,rows);
-  if(created.length) rows=rows.concat(created);
-  State.rows=rows;
-  render();
+  const bar=$("#loadbar"); if(bar) bar.classList.add("on");
+  try{
+    let rows=await Store.list(State.weekStart);
+    const created=await materialize(State.weekStart,rows);
+    if(created.length) rows=rows.concat(created);
+    State.rows=rows;
+    render();
+  }catch(e){
+    console.error(e);
+    toast("Connexion aux données impossible — réessaie",true);
+  }finally{
+    if(bar) bar.classList.remove("on");
+  }
 }
 
 /* ================================================================= RENDU UI */
@@ -561,7 +633,15 @@ function dayTimeline(dateStr){
 const NOON = 12*60;
 function baseSiteFor(dateStr){ return (SETTINGS.baseSite&&SETTINGS.baseSite[new Date(dateStr).getDay()])||null; }
 function rushInterval(){ const r=SETTINGS.rush; return (r&&r.enabled)?{start:r.start,end:r.end,label:r.label||"Rush cuisine"}:null; }
-function rushRow(dateStr){ const r=rushInterval(); return r?{date:dateStr,site:"—",title:r.label,start:r.start,end:r.end,status:"planned",source:"rush",priority:false}:null; }
+function rushOffHas(ds){ return Array.isArray(SETTINGS.rushOff) && SETTINGS.rushOff.includes(ds); }
+async function toggleRushDay(ds){
+  if(!Array.isArray(SETTINGS.rushOff)) SETTINGS.rushOff=[];
+  const i=SETTINGS.rushOff.indexOf(ds);
+  if(i>=0) SETTINGS.rushOff.splice(i,1); else SETTINGS.rushOff.push(ds);
+  try{ await saveSettings(); toast(i>=0?"Rush rétabli ce jour":"Rush retiré ce jour"); await load(); }
+  catch(e){ console.warn(e); toast("Enregistrement impossible",true); }
+}
+function rushRow(dateStr){ const r=rushInterval(); return (r && !rushOffHas(dateStr))?{date:dateStr,site:"—",title:r.label,start:r.start,end:r.end,status:"planned",source:"rush",priority:false}:null; }
 function isWorkday(d){ const w=d.getDay(); return w>=1 && w<=CONFIG.HOURS.days; }
 function nextWorkday(dateStr){ let x=new Date(dateStr); do{ x=addDays(x,1); }while(!isWorkday(x)); return iso(x); }
 
@@ -614,11 +694,13 @@ function render(){
   const ws=State.weekStart, we=addDays(ws,6);
   $("#weekLabel").firstChild.nodeValue=`${fmtDay(ws)} – ${fmtDay(we)}`;
   $("#weekSub").textContent=`Semaine ${weekNum(ws)} · ${ws.getFullYear()}`;
+  { const mp=$("#monthPick"); if(mp) mp.value=`${ws.getFullYear()}-${pad(ws.getMonth()+1)}`; }
   const isAdmin=State.role==="admin";
   $("#btnResponsable").classList.toggle("active",isAdmin);
   $("#btnDirecteur").classList.toggle("active",!isAdmin);
   $("#addBtn").style.display=isAdmin?"":"none";
   $("#settingsBtn").style.display=isAdmin?"":"none";
+  $("#myReqBtn").style.display=isAdmin?"none":"";
   $("#demoBanner").style.display=Store.mode==="demo"?"":"none";
   $("#brand-sub").textContent = supaOn && Store.mode==="supabase" ? "Maintenance — partagé en temps réel" : "Maintenance — Groupe La Côte";
 
@@ -636,6 +718,13 @@ function render(){
        ${busyCount?`<span class="badge">${busyCount} interv.</span>`:``}`));
     const bSite=baseSiteFor(ds);
     if(bSite) card.appendChild(el("div","day-site",`📍 Site du jour · <b>${esc(bSite)}</b>`));
+    if(State.role==="admin" && rushInterval()){
+      const off=rushOffHas(ds);
+      const ctl=el("div","rush-toggle"+(off?" off":""),
+        `<label><input type="checkbox" ${off?"":"checked"}> 🍽 Rush du midi ${off?"— <b>retiré</b>":""}</label>`);
+      ctl.querySelector("input").onchange=()=>toggleRushDay(ds);
+      card.appendChild(ctl);
+    }
     const slots=el("div","slots");
     const items=dayTimeline(ds);
     if(!items.length){slots.appendChild(el("div","empty-day","Journée complète libre"));}
@@ -668,6 +757,16 @@ function jobRow(j){
     return r;
   }
   const cls = j.priority?"prio" : j.status==="requested"?"req" : j.status==="confirmed"?"confirmed":"busy";
+  if(j.source==="off"){
+    const r=el("div","row off");
+    r.innerHTML=`<div class="marker"></div>
+      <div class="time mono">Journée</div>
+      <div class="body"><div class="title">🌴 ${esc(j.title)}</div>
+      ${j.notes?`<div class="meta">${esc(j.notes)}</div>`:``}
+      ${State.role==="admin"?`<div class="admin-actions"><button class="btn small danger" data-act="del">Retirer</button></div>`:``}</div>`;
+    if(State.role==="admin") r.querySelector("[data-act]").onclick=e=>{e.stopPropagation();adminAct("del",j.id);};
+    return r;
+  }
   const bSite=baseSiteFor(j.date);
   const offsite = bSite && j.site!==bSite;
   const r=el("div","row busy "+cls);
@@ -962,6 +1061,36 @@ function renderSettings(draft){
     <div class="set-row">
       <label class="set-lbl">Fin</label><input id="set-rush-end" type="time" value="${draft.rush.end||"13:20"}">
     </div>
+    <div class="set-h">🌴 Absences / congés</div>
+    <div class="set-note">Bloque un ou plusieurs jours : ils sont exclus du placement automatique.</div>
+    <div class="set-row"><label class="set-lbl">Du</label><input id="set-abs-from" type="date"></div>
+    <div class="set-row"><label class="set-lbl">Au</label><input id="set-abs-to" type="date"></div>
+    <div class="set-row"><input id="set-abs-reason" placeholder="Motif (facultatif)"></div>
+    <button class="btn small" id="set-abs-add">Bloquer ces jours</button>
+
+    <div class="set-h">📤 Exporter / sauvegarder</div>
+    <div class="set-note">Télécharge tes interventions (30 j passés → 180 j à venir).</div>
+    <div class="set-row" style="gap:8px">
+      <button class="btn small" id="set-exp-csv">CSV</button>
+      <button class="btn small" id="set-exp-json">JSON</button>
+      <button class="btn small" id="set-exp-ics">Agenda (.ics)</button>
+    </div>
+
+    <div class="set-h">🔗 Connexion & alertes (cet appareil)</div>
+    <div class="set-note">Renseigne ici pour ne plus repasser en mode démo après un déploiement. La clé « sb_publishable_ » est publique.</div>
+    <div class="set-row"><input id="set-supa-url" placeholder="https://xxxx.supabase.co" value="${esc(CONFIG.SUPABASE_URL||"")}"></div>
+    <div class="set-row"><input id="set-supa-key" placeholder="sb_publishable_…" value="${esc(CONFIG.SUPABASE_ANON_KEY||"")}"></div>
+    <div class="set-row"><input id="set-ntfy" placeholder="Sujet ntfy (alertes push)" value="${esc(CONFIG.NTFY_TOPIC||"")}"></div>
+    <button class="btn small" id="set-supa-save">Enregistrer la connexion</button>
+
+    <div class="set-h">🔐 Connexion sécurisée (e-mail)</div>
+    <div class="set-note">Alternative au code : reçois un lien par e-mail (permet de verrouiller l'écriture côté serveur). Nécessite Supabase.</div>
+    <div class="set-row"><input id="set-auth-email" type="email" placeholder="ton@email.ch"></div>
+    <div class="set-row" style="gap:8px">
+      <button class="btn small" id="set-auth-send">Recevoir un lien</button>
+      <button class="btn small danger" id="set-auth-out">Se déconnecter</button>
+    </div>
+
     <div class="set-h">🔒 Code Responsable</div>
     <div class="set-note">Vide = code inchangé. Le code est haché (jamais stocké en clair) ; privilégie un code long/alphanumérique pour une vraie protection.</div>
     <div class="field"><input id="set-pin" type="text" autocomplete="off" placeholder="Nouveau code (facultatif)"></div>
@@ -996,6 +1125,18 @@ function renderSettings(draft){
   $("#set-rush-start").onchange=e=>{draft.rush.start=e.target.value;};
   $("#set-rush-end").onchange=e=>{draft.rush.end=e.target.value;};
   $("#set-pin").oninput=e=>{draft.newPin=e.target.value;};
+  $("#set-abs-add").onclick=async()=>{
+    const f=$("#set-abs-from").value, t=$("#set-abs-to").value||f;
+    if(!f){toast("Choisis une date",true);return;}
+    const n=await addAbsence(f,t,$("#set-abs-reason").value.trim());
+    closeSheet(); toast(n?`${n} jour(s) bloqué(s) ✔`:"Aucun jour ouvré dans cette plage",!n); await load();
+  };
+  $("#set-exp-csv").onclick=()=>exportData("csv");
+  $("#set-exp-json").onclick=()=>exportData("json");
+  $("#set-exp-ics").onclick=()=>exportData("ics");
+  $("#set-supa-save").onclick=()=>saveSupaKeys($("#set-supa-url").value,$("#set-supa-key").value,$("#set-ntfy").value);
+  $("#set-auth-send").onclick=()=>authSendLink($("#set-auth-email").value);
+  $("#set-auth-out").onclick=authSignOut;
   $("#set-save").onclick=()=>saveSettingsFromDraft(draft);
 }
 
@@ -1020,8 +1161,207 @@ async function saveSettingsFromDraft(draft){
   try{
     for(const r of renames){ if(Store.renameSite) await Store.renameSite(r.from,r.to); }
     await saveSettings();
+    await cleanupRecurring();
     closeSheet(); bindSiteFilter(); toast("Paramètres enregistrés ✔"); await load();
   }catch(e){ console.warn(e); toast("Enregistrement impossible (table app_settings ?)",true); }
+}
+
+/* ============================================================ FONCTIONNALITÉS
+   Tournée du jour, aperçu mensuel, mes demandes, absences, exports, connexion,
+   authentification e-mail, nettoyage des récurrences.                          */
+const openHM = ()=>toHM(CONFIG.HOURS.start*60);
+const closeHM = ()=>toHM(CONFIG.HOURS.end*60);
+function mapsLink(site){ return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(site); }
+function download(name,text,mime){
+  const b=new Blob([text],{type:mime}); const u=URL.createObjectURL(b);
+  const a=document.createElement("a"); a.href=u; a.download=name; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+
+/* --- Tournée du jour ---------------------------------------------------- */
+async function openTour(dateStr){
+  const day = dateStr || iso(new Date());
+  let rows=[]; try{ rows=await Store.range(day,day); }catch(e){}
+  rows=rows.filter(r=>r.status!=="cancelled" && r.source!=="off" && r.source!=="rush")
+           .sort((a,b)=>toMin(a.start)-toMin(b.start));
+  const bySite={}; rows.forEach(r=>{(bySite[r.site]=bySite[r.site]||[]).push(r);});
+  const d=new Date(day);
+  const bSite=baseSiteFor(day);
+  const sitesHtml = Object.keys(bySite).length ? Object.keys(bySite).sort((a,b)=>(a===bSite?-1:b===bSite?1:0)).map(site=>`
+      <div class="tour-site">
+        <div class="tour-site-h"><b>${esc(site)}</b>${site===bSite?' <span class="reco">★ site du jour</span>':''}
+          <a class="btn small" href="${mapsLink(site)}" target="_blank" rel="noopener">🗺 Itinéraire</a></div>
+        ${bySite[site].map(r=>`<div class="tour-item"><span class="mono">${esc(r.start)}–${esc(r.end)}</span> ${esc(r.title)}
+          <span class="state ${r.status==="confirmed"?"confirmed":"req"}">${r.status==="confirmed"?"confirmé":"à confirmer"}</span></div>`).join("")}
+      </div>`).join("") : `<div class="set-note">Aucune intervention ce jour.</div>`;
+  sheet.innerHTML=`
+    <h3>🚗 Ma tournée</h3>
+    <div class="sub">${DAYS_FR[d.getDay()]} ${fmtDay(d)}</div>
+    <div class="set-row">
+      <button class="btn small" id="tour-prev">‹ Jour</button>
+      <button class="btn small" id="tour-today">Aujourd'hui</button>
+      <button class="btn small" id="tour-next">Jour ›</button>
+    </div>
+    ${sitesHtml}
+    <div class="sheet-actions"><button class="btn primary" id="tour-close">Fermer</button></div>`;
+  overlay.classList.add("open");
+  const shift=n=>openTour(iso(addDays(d,n)));
+  $("#tour-prev").onclick=()=>shift(-1);
+  $("#tour-next").onclick=()=>shift(1);
+  $("#tour-today").onclick=()=>openTour(iso(new Date()));
+  $("#tour-close").onclick=closeSheet;
+}
+
+/* --- Aperçu mensuel (charge par jour) ---------------------------------- */
+async function openHeatmap(){
+  const base=State.weekStart;
+  const first=new Date(base.getFullYear(),base.getMonth(),1);
+  const last=new Date(base.getFullYear(),base.getMonth()+1,0);
+  let rows=[]; try{ rows=await Store.range(iso(first),iso(last)); }catch(e){}
+  const count={}; rows.forEach(r=>{ if(r.status!=="cancelled"&&r.source!=="off"&&r.source!=="rush") count[r.date]=(count[r.date]||0)+1; });
+  const max=Math.max(1,...Object.values(count));
+  const lead=(first.getDay()+6)%7; // 0=lundi
+  let cells="";
+  for(let i=0;i<lead;i++) cells+=`<div class="hm-cell empty"></div>`;
+  for(let day=1;day<=last.getDate();day++){
+    const dObj=new Date(first.getFullYear(),first.getMonth(),day);
+    const wd=dObj.getDay();
+    const ds=iso(dObj);
+    const n=count[ds]||0;
+    const weekend=(wd===0||wd===6);
+    const alpha=n?(0.18+0.6*n/max):0;
+    const bg=weekend?"transparent":`rgba(28,143,129,${alpha.toFixed(2)})`;
+    cells+=`<button class="hm-cell${weekend?" weekend":""}" data-d="${ds}" style="background:${bg}">
+      <span class="hm-n">${day}</span>${n?`<span class="hm-c">${n}</span>`:""}</button>`;
+  }
+  const monthLabel=first.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  sheet.innerHTML=`
+    <h3>📊 Aperçu du mois</h3>
+    <div class="sub">${monthLabel} · charge d'interventions par jour</div>
+    <div class="hm-grid-h">${["L","M","M","J","V","S","D"].map(x=>`<span>${x}</span>`).join("")}</div>
+    <div class="hm-grid">${cells}</div>
+    <div class="set-note">Touche un jour pour t'y rendre.</div>
+    <div class="sheet-actions"><button class="btn primary" id="hm-close">Fermer</button></div>`;
+  overlay.classList.add("open");
+  sheet.querySelectorAll(".hm-cell[data-d]").forEach(b=>b.onclick=()=>{
+    State.weekStart=mondayOf(new Date(b.dataset.d)); closeSheet(); load();
+  });
+  $("#hm-close").onclick=closeSheet;
+}
+
+/* --- Mes demandes (directeur) ------------------------------------------ */
+async function openMyRequests(){
+  const saved=localStorage.getItem("planning_dirname")||"";
+  const from=iso(new Date()), to=iso(addDays(new Date(),45));
+  let rows=[]; try{ rows=await Store.range(from,to); }catch(e){}
+  const build=name=>{
+    const mine=rows.filter(r=>r.source==="adhoc"&&(r.requested_by||"").toLowerCase()===name.toLowerCase())
+      .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:toMin(a.start)-toMin(b.start));
+    return mine.length?mine.map(r=>{
+      const d=new Date(r.date);
+      const st=r.status==="confirmed"?`<span class="state confirmed">confirmée</span>`
+        :r.status==="requested"?`<span class="state req">en attente</span>`:esc(r.status);
+      return `<div class="tour-item"><b>${esc(r.title)}</b> ${st}<br>
+        <span class="meta">${esc(r.site)} · ${DAYS_FR[d.getDay()]} ${fmtDay(d)} · ${esc(r.start)}–${esc(r.end)}</span></div>`;
+    }).join(""):`<div class="set-note">Aucune demande à ton nom sur les 45 prochains jours.</div>`;
+  };
+  sheet.innerHTML=`
+    <h3>📋 Mes demandes</h3>
+    <div class="sub">Suivi du statut de tes demandes</div>
+    <div class="field"><label>Ton nom (tel que saisi dans les demandes)</label>
+      <input id="mr-name" value="${esc(saved)}" placeholder="Ex : Directeur Gland"></div>
+    <div id="mr-list">${saved?build(saved):`<div class="set-note">Saisis ton nom pour voir tes demandes.</div>`}</div>
+    <div class="sheet-actions"><button class="btn primary" id="mr-close">Fermer</button></div>`;
+  overlay.classList.add("open");
+  $("#mr-name").oninput=e=>{ const v=e.target.value.trim(); localStorage.setItem("planning_dirname",v); $("#mr-list").innerHTML=v?build(v):`<div class="set-note">Saisis ton nom pour voir tes demandes.</div>`; };
+  $("#mr-close").onclick=closeSheet;
+}
+
+/* --- Absences / congés (Responsable) ----------------------------------- */
+async function addAbsence(fromISO,toISO,reason){
+  let d=new Date(fromISO); const end=new Date(toISO||fromISO);
+  const jobs=[];
+  while(d<=end){
+    if(isWorkday(d)) jobs.push({date:iso(d),site:"—",title:"Absence / Congé",start:openHM(),end:closeHM(),
+      status:"planned",priority:false,source:"off",requested_by:"",notes:reason||""});
+    d=addDays(d,1);
+  }
+  for(const j of jobs){ try{await Store.insert(j);}catch(e){console.warn(e);} }
+  return jobs.length;
+}
+
+/* --- Exports : CSV / JSON / iCal ---------------------------------------- */
+async function exportData(kind){
+  const from=iso(addDays(new Date(),-30)), to=iso(addDays(new Date(),180));
+  let rows=[]; try{ rows=await Store.range(from,to); }catch(e){ toast("Export impossible",true); return; }
+  rows=rows.filter(r=>r.status!=="cancelled").sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:toMin(a.start)-toMin(b.start));
+  if(kind==="json"){ download("planning.json",JSON.stringify(rows,null,2),"application/json"); return; }
+  if(kind==="csv"){
+    const esc2=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+    const head=["date","site","objet","debut","fin","statut","demande_par","notes"];
+    const lines=[head.join(",")].concat(rows.map(r=>[r.date,r.site,r.title,r.start,r.end,r.status,r.requested_by,r.notes].map(esc2).join(",")));
+    download("planning.csv","\uFEFF"+lines.join("\r\n"),"text/csv"); return;
+  }
+  if(kind==="ics"){
+    const dt=(date,hm)=>date.replace(/-/g,"")+"T"+hm.replace(":","")+"00";
+    const evs=rows.filter(r=>r.source!=="off"&&r.source!=="rush").map((r,i)=>
+`BEGIN:VEVENT
+UID:planning-${r.id||i}@lacote
+DTSTAMP:${dt(iso(new Date()),"00:00")}
+DTSTART:${dt(r.date,r.start)}
+DTEND:${dt(r.date,r.end)}
+SUMMARY:${(r.title||"").replace(/\n/g," ")} — ${r.site||""}
+STATUS:${r.status==="confirmed"?"CONFIRMED":"TENTATIVE"}
+DESCRIPTION:${((r.notes||"")+(r.requested_by?(" · "+r.requested_by):"")).replace(/\n/g," ")}
+END:VEVENT`).join("\n");
+    const ics=`BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Planning La Cote//FR\nCALSCALE:GREGORIAN\n${evs}\nEND:VCALENDAR`;
+    download("planning.ics",ics,"text/calendar"); return;
+  }
+}
+
+/* --- Nettoyage des récurrences obsolètes (idée 8) ---------------------- */
+async function cleanupRecurring(){
+  try{
+    const today=iso(new Date());
+    const rows=await Store.range(today,iso(addDays(new Date(),120)));
+    for(const r of rows.filter(r=>r.source==="template")){
+      const dd=new Date(r.date); const wd=(dd.getDay()+6)%7+1; const wn=weekNum(dd);
+      const match=SETTINGS.recurring.some(t=>{
+        if(t.site!==r.site||t.title!==r.title||t.start!==r.start||Number(t.weekday)!==wd) return false;
+        if(Number(t.freq)===2){ const even=wn%2===0; if(((t.parity==="odd")?!even:even)===false) return false; }
+        return true;
+      });
+      if(!match) await Store.remove(r.id);
+    }
+  }catch(e){ console.warn("cleanupRecurring",e); }
+}
+
+/* --- Connexion Supabase / alertes (persisté sur l'appareil, idée 2) ----- */
+function saveSupaKeys(url,key,ntfy){
+  localStorage.setItem("planning_supakeys",JSON.stringify({url:(url||"").trim(),key:(key||"").trim()}));
+  localStorage.setItem("planning_ntfy",(ntfy||"").trim());
+  toast("Connexion enregistrée — rechargement…"); setTimeout(()=>location.reload(),700);
+}
+
+/* --- Authentification e-mail (idée 1, sans casser le PIN) --------------- */
+async function authSendLink(email){
+  if(!SB){ toast("Connexion e-mail indisponible en mode démo",true); return; }
+  if(!email||!email.includes("@")){ toast("E-mail invalide",true); return; }
+  const {error}=await SB.auth.signInWithOtp({email:email.trim(),options:{emailRedirectTo:location.href}});
+  if(error) toast("Envoi impossible : "+error.message,true);
+  else toast("Lien de connexion envoyé par e-mail ✔");
+}
+async function authCheck(){
+  if(!SB) return;
+  try{
+    const {data}=await SB.auth.getSession();
+    if(data&&data.session){ State.role="admin"; }
+    SB.auth.onAuthStateChange((_e,sess)=>{ if(sess){ State.role="admin"; render(); } });
+  }catch(e){ console.warn("authCheck",e); }
+}
+async function authSignOut(){
+  try{ if(SB) await SB.auth.signOut(); }catch(e){}
+  State.role="directeur"; render(); toast("Déconnecté");
 }
 
 /* ================================================================== NAV / UI */
@@ -1035,8 +1375,18 @@ function bindUI(){
   $("#prevWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,-7);load();};
   $("#nextWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,7);load();};
   $("#todayBtn").onclick=()=>{State.weekStart=mondayOf(new Date());load();};
+  $("#monthPick").onchange=e=>{
+    const v=e.target.value; if(!v) return;
+    const [y,m]=v.split("-").map(Number);
+    if(!y||!m) return;
+    State.weekStart=mondayOf(new Date(y,m-1,1));   // 1ère semaine du mois choisi
+    load();
+  };
   $("#addBtn").onclick=()=>openEdit(null);
   $("#settingsBtn").onclick=openSettings;
+  $("#tourBtn").onclick=()=>openTour();
+  $("#monthBtn").onclick=openHeatmap;
+  $("#myReqBtn").onclick=openMyRequests;
 
   bindSiteFilter();
   const sel=$("#siteFilter");
@@ -1063,6 +1413,7 @@ function bindUI(){
 async function boot(){
   Store=makeStore();
   await loadSettings();
+  await authCheck();
   bindUI();
   Store.subscribe && Store.subscribe(()=>load());
   subscribeSettings();
