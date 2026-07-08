@@ -190,6 +190,17 @@ header.app{
 .rush-toggle label{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
 .rush-toggle input{width:16px;height:16px;accent-color:var(--brand)}
 .rush-toggle.off{color:var(--req)}
+.move-grp{display:inline-flex;gap:2px;margin:0 2px}
+.chip-urgent{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;
+  background:#fde3e3;color:#c8102e;border:1px solid #f3c3c3;border-radius:999px;padding:1px 8px;margin-left:6px}
+.inbox-card.urgent{border-color:#e0a; box-shadow:0 0 0 2px rgba(200,16,46,.18), var(--shadow-sm)}
+.urg-box{display:flex;align-items:center;gap:9px;margin:2px 0 12px;padding:9px 11px;border-radius:10px;
+  background:#fdeef0;border:1px solid #f3c9cf;font-size:13px;font-weight:600;color:#a11}
+.urg-box input{width:18px;height:18px;accent-color:#c8102e}
+.weekload{max-width:1180px;margin:8px auto 0;padding:8px 14px}
+.wl-txt{font-size:13px;color:var(--ink)}
+.wl-bar{height:8px;border-radius:6px;background:rgba(38,48,63,.08);overflow:hidden;margin-top:5px}
+.wl-bar span{display:block;height:100%;border-radius:6px;transition:width .3s}
 /* Tournée */
 .tour-site{border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0;background:#fffdf9;box-shadow:var(--shadow-sm)}
 .tour-site-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
@@ -337,6 +348,7 @@ header.app{
   <span class="spacer"></span>
   <button class="btn ghost small" id="tourBtn">🚗 Tournée</button>
   <button class="btn ghost small" id="monthBtn">📊 Mois</button>
+  <button class="btn ghost small" id="reportBtn">📄 Rapport</button>
   <button class="btn ghost small" id="myReqBtn" style="display:none">📋 Mes demandes</button>
   <div class="site-select">
     <select id="siteFilter" aria-label="Filtrer par site"></select>
@@ -344,6 +356,8 @@ header.app{
   <button class="btn primary small" id="addBtn" style="display:none">+ Intervention</button>
   <button class="btn ghost small" id="settingsBtn" style="display:none">⚙ Paramètres</button>
 </div>
+
+<div id="weekLoad" class="weekload" style="display:none"></div>
 
 <div class="legend">
   <b><span class="chip free"></span> Libre</b>
@@ -576,11 +590,13 @@ async function materialize(ws,existing){
 }
 
 /* ------------------------------------------------------------- Notifications */
-async function notify(title,body){
+async function notify(title,body,opts){
+  opts=opts||{};
   const tasks=[]; const appUrl=location.origin+location.pathname;
-  if(CONFIG.NTFY_TOPIC){
-    tasks.push(fetch("https://ntfy.sh/"+CONFIG.NTFY_TOPIC,{method:"POST",
-      headers:{"Title":encodeURIComponent(title),"Tags":"wrench","Priority":"high","Click":appUrl},
+  const topic=opts.topic||CONFIG.NTFY_TOPIC;
+  if(topic){
+    tasks.push(fetch("https://ntfy.sh/"+topic,{method:"POST",
+      headers:{"Title":encodeURIComponent(title),"Tags":opts.tags||"wrench","Priority":opts.priority||"high","Click":appUrl},
       body}).catch(()=>{}));
   }
   if(CONFIG.N8N_WEBHOOK){
@@ -588,6 +604,11 @@ async function notify(title,body){
       body:JSON.stringify({title,body,url:appUrl,at:new Date().toISOString()})}).catch(()=>{}));
   }
   await Promise.allSettled(tasks);
+}
+function slug(s){ return (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+async function notifySite(site,title,body,opts){
+  if(!CONFIG.NTFY_TOPIC) return;
+  await notify(title,body,Object.assign({topic:CONFIG.NTFY_TOPIC+"-"+slug(site)},opts||{}));
 }
 
 /* =============================================================== CHARGEMENT */
@@ -609,7 +630,7 @@ async function load(){
 
 /* ================================================================= RENDU UI */
 function visibleRows(){
-  return State.rows.filter(r=>r.status!=="cancelled" &&
+  return State.rows.filter(r=>r.status!=="cancelled" && r.status!=="refused" &&
     (State.site==="__all__"||r.site===State.site));
 }
 
@@ -689,12 +710,83 @@ function autoPlace(dateStr,site,dur){
   return null;
 }
 
+/* --- Charge hebdomadaire (idée 16) --- */
+function updateWeekLoad(ws){
+  const el2=$("#weekLoad"); if(!el2) return;
+  const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
+  const r=rushInterval(); const rushMin=r?(toMin(r.end)-toMin(r.start)):0;
+  let avail=0, planned=0;
+  for(let i=0;i<CONFIG.HOURS.days;i++){
+    const ds=iso(addDays(ws,i));
+    const off=State.rows.some(x=>x.date===ds&&x.source==="off"&&x.status!=="cancelled");
+    if(off) continue;
+    let cap=close-open;
+    if(r && !rushOffHas(ds)) cap-=rushMin;
+    avail+=cap;
+    State.rows.filter(x=>x.date===ds && x.source!=="off" && x.source!=="rush"
+        && x.status!=="cancelled" && x.status!=="refused")
+      .forEach(x=>{ planned += Math.max(0,toMin(x.end)-toMin(x.start)); });
+  }
+  const h=m=>(m/60).toFixed(1).replace(".0","").replace(".",",");
+  const pct=avail?Math.round(planned/avail*100):0;
+  const col=pct>=90?"var(--busy)":pct>=70?"var(--req)":"var(--free)";
+  el2.style.display="";
+  el2.innerHTML=`<div class="wl-txt">Charge de la semaine : <b>${h(planned)} h</b> planifiées / ${h(avail)} h dispo
+      <b style="color:${col}">(${pct}%)</b></div>
+    <div class="wl-bar"><span style="width:${Math.min(100,pct)}%;background:${col}"></span></div>`;
+}
+
+/* --- Rapport mensuel imprimable (idée 17) --- */
+async function openReport(){
+  const base=State.weekStart;
+  const first=new Date(base.getFullYear(),base.getMonth(),1);
+  const last=new Date(base.getFullYear(),base.getMonth()+1,0);
+  let rows=[]; try{ rows=await Store.range(iso(first),iso(last)); }catch(e){ toast("Rapport indisponible",true); return; }
+  const act=rows.filter(r=>r.status!=="cancelled"&&r.status!=="refused"&&r.source!=="off"&&r.source!=="rush");
+  const bySite={}; let totMin=0;
+  act.forEach(r=>{ const m=Math.max(0,toMin(r.end)-toMin(r.start)); totMin+=m;
+    bySite[r.site]=bySite[r.site]||{n:0,min:0}; bySite[r.site].n++; bySite[r.site].min+=m; });
+  const refused=rows.filter(r=>r.status==="refused").length;
+  const absDays=new Set(rows.filter(r=>r.source==="off").map(r=>r.date)).size;
+  const rushOffN=(SETTINGS.rushOff||[]).filter(d=>d>=iso(first)&&d<=iso(last)).length;
+  const h=m=>(m/60).toFixed(1).replace(".",",");
+  const monthLabel=first.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  const rowsHtml=Object.keys(bySite).sort().map(s=>`<tr><td>${esc(s)}</td><td style="text-align:right">${bySite[s].n}</td><td style="text-align:right">${h(bySite[s].min)} h</td></tr>`).join("")
+    || `<tr><td colspan="3">Aucune intervention.</td></tr>`;
+  const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport ${monthLabel}</title>
+    <style>body{font-family:system-ui,Arial,sans-serif;color:#26303f;padding:28px;max-width:720px;margin:auto}
+    h1{font-size:20px} h2{font-size:15px;margin-top:22px} table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border:1px solid #dcd; padding:8px 10px;font-size:14px} th{background:#eef;text-align:left}
+    .kpi{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}
+    .kpi div{border:1px solid #dcd;border-radius:10px;padding:10px 14px;font-size:14px}
+    .kpi b{display:block;font-size:20px}
+    @media print{button{display:none}}</style></head><body>
+    <h1>Rapport d'activité — ${monthLabel}</h1>
+    <div class="kpi">
+      <div><b>${act.length}</b> interventions</div>
+      <div><b>${h(totMin)} h</b> sur site</div>
+      <div><b>${rushOffN}</b> rush du midi sacrifiés</div>
+      <div><b>${absDays}</b> jours d'absence</div>
+      <div><b>${refused}</b> demandes refusées</div>
+    </div>
+    <h2>Détail par site</h2>
+    <table><thead><tr><th>Site</th><th style="text-align:right">Interventions</th><th style="text-align:right">Heures</th></tr></thead>
+    <tbody>${rowsHtml}</tbody></table>
+    <p style="margin-top:20px;color:#667;font-size:12px">Groupe La Côte · généré le ${new Date().toLocaleDateString("fr-FR")}</p>
+    <button onclick="window.print()" style="margin-top:16px;padding:10px 16px;font-size:14px;border-radius:8px;border:1px solid #1c8f81;background:#1c8f81;color:#fff;cursor:pointer">🖨 Imprimer / PDF</button>
+    </body></html>`;
+  const w=window.open("","_blank");
+  if(!w){ toast("Autorise les pop-ups pour ouvrir le rapport",true); return; }
+  w.document.write(html); w.document.close();
+}
+
 function render(){
   // en-tête semaine
   const ws=State.weekStart, we=addDays(ws,6);
   $("#weekLabel").firstChild.nodeValue=`${fmtDay(ws)} – ${fmtDay(we)}`;
   $("#weekSub").textContent=`Semaine ${weekNum(ws)} · ${ws.getFullYear()}`;
   { const mp=$("#monthPick"); if(mp) mp.value=`${ws.getFullYear()}-${pad(ws.getMonth()+1)}`; }
+  updateWeekLoad(ws);
   const isAdmin=State.role==="admin";
   $("#btnResponsable").classList.toggle("active",isAdmin);
   $("#btnDirecteur").classList.toggle("active",!isAdmin);
@@ -777,20 +869,37 @@ function jobRow(j){
     <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
     <div class="body">
       <div class="title">${esc(j.title)}</div>
-      <div class="meta"><span class="tag" style="background:var(--busy-bg);color:var(--busy)">${esc(j.site)}</span>${offsite?`<span class="chip-move">⚠ déplacement</span>`:``}${stateTxt}</div>
+      <div class="meta"><span class="tag" style="background:var(--busy-bg);color:var(--busy)">${esc(j.site)}</span>${offsite?`<span class="chip-move">⚠ déplacement</span>`:``}${j.urgent?`<span class="chip-urgent">🚨 urgent</span>`:``}${stateTxt}</div>
       ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:``}
+      ${j.photo_url?`<div class="meta"><a href="${esc(j.photo_url)}" target="_blank" rel="noopener">📷 Voir la photo</a></div>`:``}
       ${j.requested_by&&j.source==="adhoc"?`<div class="meta">Demandé par ${esc(j.requested_by)}</div>`:``}
       ${State.role==="admin"?adminActions(j):``}
     </div>`;
   if(State.role==="admin"){
-    r.querySelectorAll("[data-act]").forEach(b=>b.onclick=e=>{e.stopPropagation();adminAct(b.dataset.act,j.id);});
+    r.querySelectorAll("[data-act]").forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      const a=b.dataset.act;
+      if(a==="dprev") return moveJob(j.id,0,-1);
+      if(a==="dnext") return moveJob(j.id,0,1);
+      if(a==="up")    return moveJob(j.id,-CONFIG.HOURS.slotMin,0);
+      if(a==="down")  return moveJob(j.id, CONFIG.HOURS.slotMin,0);
+      adminAct(a,j.id);
+    });
   }
   return r;
 }
 function adminActions(j){
-  const a=[`<button class="btn small" data-act="edit">Modifier</button>`,
-           `<button class="btn small danger" data-act="del">Supprimer</button>`];
-  if(j.status==="requested") a.unshift(`<button class="btn small primary" data-act="ok">Confirmer</button>`);
+  const a=[];
+  if(j.status==="requested") a.push(`<button class="btn small primary" data-act="ok">Confirmer</button>`);
+  if(j.status==="requested") a.push(`<button class="btn small danger" data-act="refuse">Refuser</button>`);
+  a.push(`<button class="btn small" data-act="edit">Modifier</button>`);
+  a.push(`<span class="move-grp">
+    <button class="btn small" data-act="dprev" title="Jour précédent">◀</button>
+    <button class="btn small" data-act="up" title="30 min plus tôt">▲</button>
+    <button class="btn small" data-act="down" title="30 min plus tard">▼</button>
+    <button class="btn small" data-act="dnext" title="Jour suivant">▶</button>
+  </span>`);
+  a.push(`<button class="btn small danger" data-act="del">Suppr.</button>`);
   return `<div class="admin-actions">${a.join("")}</div>`;
 }
 
@@ -803,17 +912,18 @@ function renderInbox(){
   if(!reqs.length) return;
   const h=el("div","",`<h3 style="max-width:1180px;margin:14px auto 0;padding:0 4px;font-size:15px">📥 Demandes à traiter (${reqs.length})</h3>`);
   box.appendChild(h);
-  reqs.sort((a,b)=>(b.priority?1:0)-(a.priority?1:0)).forEach(j=>{
-    const c=el("div","inbox-card"+(j.priority?" prio":""));
-    c.innerHTML=`<h4>${esc(j.title)} ${j.priority?'<span class="state prio">· Prioritaire</span>':''}</h4>
+  reqs.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)).forEach(j=>{
+    const c=el("div","inbox-card"+(j.urgent?" urgent":""));
+    c.innerHTML=`<h4>${j.urgent?'🚨 ':''}${esc(j.title)}</h4>
       <div class="meta">${esc(j.site)} · ${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))} · ${esc(j.start)}–${esc(j.end)}${j.requested_by?` · par ${esc(j.requested_by)}`:''}</div>
       ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:''}
+      ${j.photo_url?`<div class="meta"><a href="${esc(j.photo_url)}" target="_blank" rel="noopener">📷 Voir la photo</a></div>`:''}
       <div class="inbox-actions">
         <button class="btn small primary" data-ok>Confirmer</button>
         <button class="btn small danger" data-no>Refuser</button>
       </div>`;
     c.querySelector("[data-ok]").onclick=()=>adminAct("ok",j.id);
-    c.querySelector("[data-no]").onclick=()=>adminAct("del",j.id);
+    c.querySelector("[data-no]").onclick=()=>adminAct("refuse",j.id);
     box.appendChild(c);
   });
 }
@@ -860,9 +970,38 @@ async function adminAct(act,id){
   const j=State.rows.find(r=>r.id===id); if(!j)return;
   if(act==="edit"){openEdit(j);return;}
   try{
-    if(act==="ok"){await Store.update(id,{status:"confirmed"});toast("Intervention confirmée");await load();}
-    if(act==="del"){if(confirm("Supprimer cette intervention ?")){await Store.remove(id);toast("Supprimé");await load();}}
+    if(act==="ok"){
+      await Store.update(id,{status:"confirmed"}); toast("Intervention confirmée");
+      await notifySite(j.site,"✅ Demande confirmée — "+j.site,
+        `${j.title}\n${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))} ${j.start}–${j.end}`,{tags:"white_check_mark"});
+      await load();
+    }
+    if(act==="refuse"){
+      const why=prompt("Motif du refus (visible par le directeur) :","");
+      if(why===null) return;
+      const notes=(j.notes?j.notes+" · ":"")+"REFUSÉ : "+(why||"non précisé");
+      await Store.update(id,{status:"refused",notes});
+      toast("Demande refusée");
+      await notifySite(j.site,"❌ Demande refusée — "+j.site,
+        `${j.title}\n${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))}\nMotif : ${why||"non précisé"}`,{tags:"x"});
+      await load();
+    }
+    if(act==="del"){ if(confirm("Supprimer définitivement cette intervention ?")){ await Store.remove(id); toast("Supprimé"); await load(); } }
   }catch(e){ console.warn(e); toast(writeErrMsg(e),true); }
+}
+
+// Déplacement rapide (idée 14) : décale de dMin minutes et/ou dDays jours
+async function moveJob(id,dMin,dDays){
+  const j=State.rows.find(r=>r.id===id); if(!j)return;
+  const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
+  let s=toMin(j.start)+ (dMin||0), e=toMin(j.end)+ (dMin||0);
+  if(s<open||e>close){ toast("Hors des horaires de travail",true); return; }
+  let date=j.date;
+  if(dDays){ let x=new Date(j.date); do{ x=addDays(x,dDays>0?1:-1); }while(!isWorkday(x)); date=iso(x); }
+  try{
+    await Store.update(id,{date,start:toHM(s),end:toHM(e)});
+    await load();
+  }catch(e){ console.warn(e); toast(/exclusion|overlap|23P01/i.test((e&&e.message)||"")?"Créneau déjà occupé à cet horaire":writeErrMsg(e),true); }
 }
 
 /* ================================================================== MODALES */
@@ -871,9 +1010,31 @@ function closeSheet(){overlay.classList.remove("open");sheet.innerHTML="";}
 overlay.onclick=e=>{if(e.target===overlay)closeSheet();};
 
 /* --- Demande directeur (clic sur créneau libre) --- */
+const FAULT_PRESETS=[
+  {label:"— Type (ajuste la durée)",dur:0},
+  {label:"Frigo / chambre froide",dur:120},
+  {label:"Machine à glace",dur:120},
+  {label:"Néon / éclairage",dur:30},
+  {label:"Plomberie / fuite",dur:60},
+  {label:"Électrique / disjoncteur",dur:60},
+  {label:"Cuisson / four / plaque",dur:90},
+  {label:"Autre",dur:60},
+];
+async function uploadPhoto(file){
+  if(!SB||!file) return "";
+  try{
+    const ext=((file.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,""))||"jpg";
+    const path=`req/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const {error}=await SB.storage.from("photos").upload(path,file,{contentType:file.type||"image/jpeg"});
+    if(error) throw error;
+    const {data}=SB.storage.from("photos").getPublicUrl(path);
+    return (data&&data.publicUrl)||"";
+  }catch(e){ console.warn("photo upload",e); return ""; }
+}
 function openRequest(dateStr,startDefault,rangeEnd){
   const dt=new Date(dateStr);
   const durOpts=[30,60,90,120,150,180].map(m=>`<option value="${m}">${m} min</option>`).join("");
+  const typeOpts=FAULT_PRESETS.map(t=>`<option value="${t.dur}">${esc(t.label)}</option>`).join("");
   const siteDefault = State.site!=="__all__"?State.site:SETTINGS.sites[0];
   sheet.innerHTML=`
     <h3>Proposer une intervention</h3>
@@ -881,9 +1042,12 @@ function openRequest(dateStr,startDefault,rangeEnd){
     <div class="info-auto">ℹ️ Une intervention n'est placée le matin que si c'est le site du jour. Sinon elle va l'après-midi ; et si la journée est pleine, elle passe au lendemain.</div>
     <div class="field"><label>Site concerné</label>
       <select id="f-site">${SETTINGS.sites.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
+    <div class="field"><label>Type de panne (facultatif)</label><select id="f-type">${typeOpts}</select></div>
     <div class="field"><label>Objet de l'intervention</label>
       <input id="f-title" placeholder="Ex : fuite bac à graisse, néon HS, frigo en alarme…"></div>
     <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
+    <label class="urg-box"><input type="checkbox" id="f-urgent"> <span>🚨 Urgent — alerte immédiate à Thibaut</span></label>
+    <div class="field"><label>Photo de la panne (facultatif)</label><input id="f-photo" type="file" accept="image/*"></div>
     <div class="field"><label>Précisions (facultatif)</label>
       <textarea id="f-notes" placeholder="Détails utiles, niveau d'urgence, matériel concerné…"></textarea></div>
     <div class="field"><label>Votre nom</label><input id="f-by" placeholder="Directeur / site"></div>
@@ -895,14 +1059,14 @@ function openRequest(dateStr,startDefault,rangeEnd){
   overlay.classList.add("open");
   $("#f-cancel").onclick=closeSheet;
   $("#f-title").focus?.();
+  $("#f-type").onchange=e=>{ const d=parseInt(e.target.value,10); if(d) $("#f-dur").value=String(d); };
   $("#f-send").onclick=async()=>{
     const title=$("#f-title").value.trim();
     if(!title){toast("Indique l'objet de l'intervention",true);return;}
     if(State.role!=="admin" && !rateOk()){toast("Trop de demandes en peu de temps — patiente une minute",true);return;}
     const dur=parseInt($("#f-dur").value,10);
     const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim()||"Directeur";
-
-    // Placement automatique selon le site du jour
+    const urgent=$("#f-urgent").checked;
     const p=autoPlace(dateStr,site,dur);
     if(!p){ toast("Aucun créneau libre dans les prochains jours",true); return; }
     const end=toHM(toMin(p.start)+dur);
@@ -910,15 +1074,20 @@ function openRequest(dateStr,startDefault,rangeEnd){
       const dObj=new Date(p.date);
       if(!confirm(`Journée pleine. Proposer plutôt ${DAYS_FR[dObj.getDay()]} ${fmtDay(dObj)} à ${p.start} ?`)) return;
     }
-    await submitRequest({date:p.date,site,title,start:p.start,end,notes,by,prio:false,status:"requested",
+    const file=$("#f-photo").files&&$("#f-photo").files[0];
+    let photo_url="";
+    if(file){ toast("Envoi de la photo…"); photo_url=await uploadPhoto(file); }
+    await submitRequest({date:p.date,site,title,start:p.start,end,notes,by,urgent,photo_url,status:"requested",
       _base:p.base,_sameDay:p.sameDay,_pref:p.pref});
   };
 }
 
 async function submitRequest(d){
   const row={date:d.date,site:d.site,title:d.title,start:d.start,end:d.end,
-    status:State.role==="admin"?"confirmed":"requested",priority:!!d.prio,
+    status:State.role==="admin"?"confirmed":"requested",priority:false,
     source:"adhoc",requested_by:d.by,notes:d.notes};
+  if(d.urgent) row.urgent=true;
+  if(d.photo_url) row.photo_url=d.photo_url;
   try{ await Store.insert(row); }
   catch(e){
     console.warn(e);
@@ -930,13 +1099,12 @@ async function submitRequest(d){
     toast(writeErrMsg(e),true); return;
   }
   closeSheet();
-  await notify(
-    (d.prio?"🔴 PRIORITAIRE — ":"🟠 Nouvelle demande — ")+d.site,
-    `${d.title}\n${DAYS_FR[new Date(d.date).getDay()]} ${fmtDay(new Date(d.date))} ${d.start}–${d.end}\nPar ${d.by}${d.notes?"\n"+d.notes:""}`
-  );
+  const head=(d.urgent?"🚨 URGENT — ":"🟠 Nouvelle demande — ")+d.site;
+  await notify(head,
+    `${d.title}\n${DAYS_FR[new Date(d.date).getDay()]} ${fmtDay(new Date(d.date))} ${d.start}–${d.end}\nPar ${d.by}${d.notes?"\n"+d.notes:""}${d.photo_url?"\n📷 photo jointe":""}`,
+    d.urgent?{priority:"max",tags:"rotating_light"}:{});
   toast(
-    d.prio ? "Demande prioritaire envoyée ✔"
-    : d._sameDay===false ? "Journée pleine — reportée au prochain jour ✔"
+    d._sameDay===false ? "Journée pleine — reportée au prochain jour ✔"
     : d._base ? "Placée le matin (site du jour) ✔"
     : "Placée l'après-midi (autre site) ✔"
   );
@@ -1312,7 +1480,7 @@ async function openHeatmap(){
 /* --- Mes demandes (directeur) ------------------------------------------ */
 async function openMyRequests(){
   const saved=localStorage.getItem("planning_dirname")||"";
-  const from=iso(new Date()), to=iso(addDays(new Date(),45));
+  const from=iso(addDays(new Date(),-30)), to=iso(addDays(new Date(),45));
   let rows=[]; try{ rows=await Store.range(from,to); }catch(e){}
   const build=name=>{
     const mine=rows.filter(r=>r.source==="adhoc"&&(r.requested_by||"").toLowerCase()===name.toLowerCase())
@@ -1320,10 +1488,13 @@ async function openMyRequests(){
     return mine.length?mine.map(r=>{
       const d=new Date(r.date);
       const st=r.status==="confirmed"?`<span class="state confirmed">confirmée</span>`
-        :r.status==="requested"?`<span class="state req">en attente</span>`:esc(r.status);
+        :r.status==="requested"?`<span class="state req">en attente</span>`
+        :r.status==="refused"?`<span class="state" style="color:var(--prio)">refusée</span>`
+        :esc(r.status);
+      const reason=(r.status==="refused"&&/REFUSÉ ?:/i.test(r.notes||""))?`<br><span class="meta">${esc((r.notes||"").split(/REFUSÉ ?:/i).pop().trim())}</span>`:``;
       return `<div class="tour-item"><b>${esc(r.title)}</b> ${st}<br>
-        <span class="meta">${esc(r.site)} · ${DAYS_FR[d.getDay()]} ${fmtDay(d)} · ${esc(r.start)}–${esc(r.end)}</span></div>`;
-    }).join(""):`<div class="set-note">Aucune demande à ton nom sur les 45 prochains jours.</div>`;
+        <span class="meta">${esc(r.site)} · ${DAYS_FR[d.getDay()]} ${fmtDay(d)} · ${esc(r.start)}–${esc(r.end)}</span>${reason}</div>`;
+    }).join(""):`<div class="set-note">Aucune demande à ton nom (30 j passés → 45 j à venir).</div>`;
   };
   sheet.innerHTML=`
     <h3>📋 Mes demandes</h3>
@@ -1481,6 +1652,7 @@ function bindUI(){
   $("#settingsBtn").onclick=openSettings;
   $("#tourBtn").onclick=()=>openTour();
   $("#monthBtn").onclick=openHeatmap;
+  $("#reportBtn").onclick=openReport;
   $("#myReqBtn").onclick=openMyRequests;
 
   bindSiteFilter();
