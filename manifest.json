@@ -1,0 +1,13 @@
+{
+  "name": "Planning Technicien — La Côte",
+  "short_name": "Planning Tech",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#d4e9f7",
+  "theme_color": "#1c8f81",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -6,6 +6,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Planning Tech" />
+<meta name="theme-color" content="#1c8f81" />
+<link rel="manifest" href="manifest.json" />
 <title>Planning Technicien — La Côte</title>
 
 <!-- Polices : IBM Plex (registre "atelier / opérations") + IBM Plex Mono pour les horaires -->
@@ -61,6 +63,8 @@ body{
   background:linear-gradient(90deg,transparent,var(--brand),transparent);
   animation:load 1s linear infinite}
 @keyframes load{from{transform:translateX(-120%)}to{transform:translateX(320%)}}
+#outbox{max-width:1180px;margin:6px auto 0;padding:8px 14px;border-radius:10px;font-size:12.5px;font-weight:600;
+  background:var(--req-bg);color:var(--req);border:1px solid #f0dcab;text-align:center}
 
 /* ---------- En-tête ---------- */
 header.app{
@@ -316,6 +320,7 @@ header.app{
   </div>
 </header>
 <div id="loadbar" aria-hidden="true"></div>
+<div id="outbox" style="display:none"></div>
 
 <div class="banner" id="demoBanner" style="display:none">
   <div class="b">⚙️ <b>Mode démonstration</b> — données locales à cet appareil. Renseigne Supabase en haut du fichier pour le partage temps réel entre tous les sites.</div>
@@ -814,11 +819,50 @@ function renderInbox(){
 }
 
 /* =============================================================== ACTIONS ADMIN */
+/* --- Sécurité côté client --- */
+function rateOk(max=6,winMs=60000){
+  try{ const now=Date.now();
+    let a=JSON.parse(localStorage.getItem("planning_rl")||"[]").filter(t=>now-t<winMs);
+    if(a.length>=max) return false;
+    a.push(now); localStorage.setItem("planning_rl",JSON.stringify(a)); return true;
+  }catch(e){ return true; }
+}
+function writeErrMsg(e){
+  const m=((e&&(e.message||e.error_description||e.msg))||"")+"";
+  if(/row-level security|permission|denied|not authoriz|JWT|401|403|policy/i.test(m))
+    return "Action refusée (mode sécurisé) — connecte-toi par e-mail dans ⚙ Paramètres pour gérer les interventions.";
+  return "Action impossible pour le moment — réessaie.";
+}
+function isNetErr(e){
+  const m=((e&&(e.message||e.msg))||"")+"";
+  return !navigator.onLine || /fetch|network|timeout|Failed to fetch|NetworkError/i.test(m);
+}
+
+/* --- File d'attente hors-ligne (idée 8) --- */
+function outboxGet(){ try{ return JSON.parse(localStorage.getItem("planning_outbox")||"[]"); }catch(e){ return []; } }
+function outboxSet(a){ try{ localStorage.setItem("planning_outbox",JSON.stringify(a)); }catch(e){} outboxBadge(); }
+function outboxQueue(row){ const a=outboxGet(); a.push(row); outboxSet(a); }
+function outboxBadge(){
+  const b=$("#outbox"); if(!b) return;
+  const n=outboxGet().length;
+  b.style.display=n?"":"none"; b.textContent=`⏳ ${n} demande(s) en attente d'envoi`;
+}
+async function flushOutbox(){
+  if(!navigator.onLine) return;
+  let a=outboxGet(); if(!a.length) return;
+  const keep=[];
+  for(const row of a){ try{ await Store.insert(row); }catch(e){ keep.push(row); } }
+  outboxSet(keep);
+  if(keep.length<a.length){ toast("Demandes hors-ligne synchronisées ✔"); await load(); }
+}
+
 async function adminAct(act,id){
   const j=State.rows.find(r=>r.id===id); if(!j)return;
-  if(act==="ok"){await Store.update(id,{status:"confirmed"});toast("Intervention confirmée");await load();}
-  if(act==="del"){if(confirm("Supprimer cette intervention ?")){await Store.remove(id);toast("Supprimé");await load();}}
-  if(act==="edit"){openEdit(j);}
+  if(act==="edit"){openEdit(j);return;}
+  try{
+    if(act==="ok"){await Store.update(id,{status:"confirmed"});toast("Intervention confirmée");await load();}
+    if(act==="del"){if(confirm("Supprimer cette intervention ?")){await Store.remove(id);toast("Supprimé");await load();}}
+  }catch(e){ console.warn(e); toast(writeErrMsg(e),true); }
 }
 
 /* ================================================================== MODALES */
@@ -854,6 +898,7 @@ function openRequest(dateStr,startDefault,rangeEnd){
   $("#f-send").onclick=async()=>{
     const title=$("#f-title").value.trim();
     if(!title){toast("Indique l'objet de l'intervention",true);return;}
+    if(State.role!=="admin" && !rateOk()){toast("Trop de demandes en peu de temps — patiente une minute",true);return;}
     const dur=parseInt($("#f-dur").value,10);
     const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim()||"Directeur";
 
@@ -874,7 +919,16 @@ async function submitRequest(d){
   const row={date:d.date,site:d.site,title:d.title,start:d.start,end:d.end,
     status:State.role==="admin"?"confirmed":"requested",priority:!!d.prio,
     source:"adhoc",requested_by:d.by,notes:d.notes};
-  await Store.insert(row);
+  try{ await Store.insert(row); }
+  catch(e){
+    console.warn(e);
+    if(isNetErr(e) && row.status==="requested"){
+      outboxQueue(row); closeSheet();
+      toast("Hors-ligne : demande enregistrée, envoyée dès le retour du réseau ⏳");
+      return;
+    }
+    toast(writeErrMsg(e),true); return;
+  }
   closeSheet();
   await notify(
     (d.prio?"🔴 PRIORITAIRE — ":"🟠 Nouvelle demande — ")+d.site,
@@ -1082,12 +1136,17 @@ function renderSettings(draft){
     <button class="btn small" id="set-supa-save">Enregistrer la connexion</button>
 
     <div class="set-h">🔐 Connexion sécurisée (e-mail)</div>
-    <div class="set-note">Alternative au code : reçois un lien par e-mail (permet de verrouiller l'écriture côté serveur). Nécessite Supabase.</div>
+    <div class="set-note">Alternative au code : reçois un lien par e-mail (permet de verrouiller l'écriture côté serveur). Nécessite Supabase.
+      <br><b>État :</b> ${AUTHED?'<span style="color:var(--free)">connecté — écriture autorisée</span>':'<span style="color:var(--req)">non connecté (le code ouvre l\'interface, mais en mode durci l\'écriture nécessite ce login)</span>'}</div>
     <div class="set-row"><input id="set-auth-email" type="email" placeholder="ton@email.ch"></div>
     <div class="set-row" style="gap:8px">
       <button class="btn small" id="set-auth-send">Recevoir un lien</button>
       <button class="btn small danger" id="set-auth-out">Se déconnecter</button>
     </div>
+
+    <div class="set-h">🧾 Journal des modifications</div>
+    <div class="set-note">Historique serveur : qui a créé / confirmé / modifié / supprimé. Nécessite la connexion e-mail.</div>
+    <button class="btn small" id="set-audit">Voir le journal</button>
 
     <div class="set-h">🔒 Code Responsable</div>
     <div class="set-note">Vide = code inchangé. Le code est haché (jamais stocké en clair) ; privilégie un code long/alphanumérique pour une vraie protection.</div>
@@ -1136,6 +1195,7 @@ function renderSettings(draft){
   $("#set-supa-save").onclick=()=>saveSupaKeys($("#set-supa-url").value,$("#set-supa-key").value,$("#set-ntfy").value);
   $("#set-auth-send").onclick=()=>authSendLink($("#set-auth-email").value);
   $("#set-auth-out").onclick=authSignOut;
+  { const ab=$("#set-audit"); if(ab) ab.onclick=openAudit; }
   $("#set-save").onclick=()=>saveSettingsFromDraft(draft);
 }
 
@@ -1145,6 +1205,7 @@ async function saveSettingsFromDraft(draft){
   if(names.some(n=>!n)){toast("Un site est sans nom",true);return;}
   if(new Set(names).size!==names.length){toast("Deux sites ont le même nom",true);return;}
   if(draft.rush.enabled && toMin(draft.rush.end)<=toMin(draft.rush.start)){toast("Rush : la fin doit être après le début",true);return;}
+  if(draft.newPin&&draft.newPin.trim()&&draft.newPin.trim().length<6){toast("Le code doit faire au moins 6 caractères (évite un code trop court/devinable)",true);return;}
   const idToName={}; draft.sites.forEach((s,i)=>idToName[s.id]=names[i]);
   const renames=draft.sites.filter(s=>s.orig&&idToName[s.id]!==s.orig).map(s=>({from:s.orig,to:idToName[s.id]}));
 
@@ -1350,17 +1411,41 @@ async function authSendLink(email){
   if(error) toast("Envoi impossible : "+error.message,true);
   else toast("Lien de connexion envoyé par e-mail ✔");
 }
+let AUTHED=false;
 async function authCheck(){
   if(!SB) return;
   try{
     const {data}=await SB.auth.getSession();
-    if(data&&data.session){ State.role="admin"; }
-    SB.auth.onAuthStateChange((_e,sess)=>{ if(sess){ State.role="admin"; render(); } });
+    if(data&&data.session){ AUTHED=true; State.role="admin"; }
+    SB.auth.onAuthStateChange((_e,sess)=>{ AUTHED=!!sess; if(sess){ State.role="admin"; } render(); });
   }catch(e){ console.warn("authCheck",e); }
 }
 async function authSignOut(){
   try{ if(SB) await SB.auth.signOut(); }catch(e){}
-  State.role="directeur"; render(); toast("Déconnecté");
+  AUTHED=false; State.role="directeur"; render(); toast("Déconnecté");
+}
+
+/* --- Journal des modifications (idée 11) --- */
+async function openAudit(){
+  if(!SB){ toast("Journal indisponible en mode démo",true); return; }
+  let rows=[];
+  try{
+    const {data,error}=await SB.from("audit").select("*").order("at",{ascending:false}).limit(60);
+    if(error) throw error; rows=data||[];
+  }catch(e){ console.warn(e); toast("Journal illisible — connecte-toi par e-mail (⚙ Paramètres)",true); return; }
+  const line=r=>{
+    const d=new Date(r.at);
+    const act={INSERT:"➕ créé",UPDATE:"✏️ modifié",DELETE:"🗑 supprimé"}[r.action]||esc(r.action);
+    const obj=(r.after&&r.after.title)||(r.before&&r.before.title)||r.table_name;
+    return `<div class="tour-item"><b>${act}</b> · ${esc(obj)}<br>
+      <span class="meta">${d.toLocaleString("fr-FR")} · ${esc(r.actor||"?")}</span></div>`;
+  };
+  sheet.innerHTML=`<h3>🧾 Journal des modifications</h3>
+    <div class="sub">60 dernières actions serveur</div>
+    ${rows.length?rows.map(line).join(""):`<div class="set-note">Journal vide (ou table absente — lance le SQL à jour).</div>`}
+    <div class="sheet-actions"><button class="btn primary" id="au-close">Fermer</button></div>`;
+  overlay.classList.add("open");
+  $("#au-close").onclick=closeSheet;
 }
 
 /* ================================================================== NAV / UI */
@@ -1427,7 +1512,15 @@ async function boot(){
   bindUI();
   Store.subscribe && Store.subscribe(()=>load());
   subscribeSettings();
-  load();
+  outboxBadge();
+  window.addEventListener("online", flushOutbox);
+  window.addEventListener("offline", ()=>toast("Hors-ligne — les demandes seront mises en file"));
+  await load();
+  flushOutbox();
+}
+/* Service Worker (PWA / offline) — sans effet si sw.js absent */
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 }
 
 /* Charge le SDK Supabase si configuré, PUIS démarre (après toutes les déclarations) */
