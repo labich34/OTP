@@ -143,19 +143,19 @@ header.app{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start
 }
 .day{
-  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  background:#fde8d0;border:1px solid #f0be86;border-radius:var(--radius);
   overflow:hidden;box-shadow:var(--shadow)
 }
-.day.today{border-color:#e8ac52;background:#fdf3dd;box-shadow:0 0 0 1px rgba(232,172,82,.4), var(--shadow)}
+.day.today{border-color:#e8892f;background:#ffe7bd;box-shadow:0 0 0 2px rgba(232,137,47,.45), var(--shadow)}
 .day-head{
-  display:flex;align-items:center;gap:8px;padding:13px 15px;border-bottom:1px solid var(--line);
-  background:linear-gradient(var(--surface),#f2ead6)
+  display:flex;align-items:center;gap:8px;padding:13px 15px;border-bottom:1px solid #f0be86;
+  background:linear-gradient(#fbdcbb,#f7cfa0)
 }
-.day.today .day-head{background:linear-gradient(#fdeec7,#fbe4b1);border-bottom-color:#f0d194}
+.day.today .day-head{background:linear-gradient(#ffe0a3,#ffcd76);border-bottom-color:#eaad55}
 .day.today .badge{color:#9a6410;background:#fbe4b1}
 .day-head .dname{font-weight:700;font-size:15px;text-transform:capitalize;letter-spacing:-.2px}
 .day-head .ddate{font-size:12.5px;font-weight:700;color:var(--ink);opacity:.72}
-.day-head .badge{margin-left:auto;font-size:11px;font-weight:700;color:var(--brand);background:var(--free-bg);
+.day-head .badge{margin-left:auto;font-size:11px;font-weight:700;color:var(--brand-ink);background:#ffffff;
   padding:3px 9px;border-radius:999px;letter-spacing:.2px}
 .slots{padding:8px}
 .day-site{margin:2px 15px 8px;padding:7px 11px;border-radius:9px;font-size:12px;font-weight:500;
@@ -416,6 +416,9 @@ const CONFIG = {
      Réglable dans l'appli : Responsable > ⚙ Paramètres > Rush du midi.          */
   RUSH: { enabled: true, start: "11:45", end: "13:20", label: "Rush cuisine" },
 
+  /* --- 5e. Durée de travail hebdomadaire de référence (Suisse : 42 h) --- */
+  WEEKLY_HOURS: 42,
+
   /* --- 5d. Modèles de tâches récurrentes (menu déroulant dans Paramètres) ---
      Pré-remplit l'objet et la durée. Ajoute/édite librement.                  */
   TASK_PRESETS: [
@@ -481,6 +484,7 @@ const SETTINGS = {
   recurring: CONFIG.RECURRING.map(x=>({...x})),
   baseSite: {...CONFIG.BASE_SITE},
   rush: {...CONFIG.RUSH},
+  weeklyHours: CONFIG.WEEKLY_HOURS,
   rushOff: [],           // jours (YYYY-MM-DD) où le rush est retiré (gros chantier)
   pinHash: ""            // vide => on utilise l'empreinte du fichier (CONFIG.ADMIN_PIN_HASH)
 };
@@ -494,6 +498,7 @@ function applySettings(d){
   if(Array.isArray(d.recurring)) SETTINGS.recurring=d.recurring.map(x=>({...x}));
   if(d.baseSite&&typeof d.baseSite==="object") SETTINGS.baseSite={...d.baseSite};
   if(d.rush&&typeof d.rush==="object") SETTINGS.rush={...CONFIG.RUSH,...d.rush};
+  if(typeof d.weeklyHours==="number"&&d.weeklyHours>0) SETTINGS.weeklyHours=d.weeklyHours;
   if(Array.isArray(d.rushOff)) SETTINGS.rushOff=d.rushOff.slice();
   if(typeof d.pinHash==="string") SETTINGS.pinHash=d.pinHash;
 }
@@ -509,7 +514,7 @@ async function loadSettings(){
   }catch(e){ console.warn("loadSettings",e); }
 }
 async function saveSettings(){
-  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
+  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,weeklyHours:SETTINGS.weeklyHours,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
   if(SB){
     const {error}=await SB.from("app_settings").upsert({id:1,data:payload,updated_at:new Date().toISOString()});
     if(error) throw error;
@@ -710,29 +715,30 @@ function autoPlace(dateStr,site,dur){
   return null;
 }
 
-/* --- Charge hebdomadaire (idée 16) --- */
+/* --- Charge hebdomadaire (idée 16) — référence : durée contractuelle --- */
 function updateWeekLoad(ws){
   const el2=$("#weekLoad"); if(!el2) return;
-  const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
   const r=rushInterval(); const rushMin=r?(toMin(r.end)-toMin(r.start)):0;
-  let avail=0, planned=0;
+  const weekMin=(SETTINGS.weeklyHours||42)*60;
+  const perDay=weekMin/CONFIG.HOURS.days;
+  let avail=weekMin, planned=0, rushTot=0;
   for(let i=0;i<CONFIG.HOURS.days;i++){
     const ds=iso(addDays(ws,i));
     const off=State.rows.some(x=>x.date===ds&&x.source==="off"&&x.status!=="cancelled");
-    if(off) continue;
-    let cap=close-open;
-    if(r && !rushOffHas(ds)) cap-=rushMin;
-    avail+=cap;
+    if(off){ avail-=perDay; continue; }
+    if(r && !rushOffHas(ds)) rushTot+=rushMin;
     State.rows.filter(x=>x.date===ds && x.source!=="off" && x.source!=="rush"
         && x.status!=="cancelled" && x.status!=="refused")
       .forEach(x=>{ planned += Math.max(0,toMin(x.end)-toMin(x.start)); });
   }
-  const h=m=>(m/60).toFixed(1).replace(".0","").replace(".",",");
-  const pct=avail?Math.round(planned/avail*100):0;
-  const col=pct>=90?"var(--busy)":pct>=70?"var(--req)":"var(--free)";
+  if(avail<0) avail=0;
+  const load=planned+rushTot;
+  const h=m=>(m/60).toFixed(1).replace(",",".").replace(/\.0$/,"").replace(".",",");
+  const pct=avail?Math.round(load/avail*100):0;
+  const col=pct>=100?"var(--busy)":pct>=80?"var(--req)":"var(--free)";
   el2.style.display="";
-  el2.innerHTML=`<div class="wl-txt">Charge de la semaine : <b>${h(planned)} h</b> planifiées / ${h(avail)} h dispo
-      <b style="color:${col}">(${pct}%)</b></div>
+  el2.innerHTML=`<div class="wl-txt">Charge de la semaine : <b style="color:${col}">${pct}%</b> —
+      ${h(planned)} h interventions${rushTot?` + ${h(rushTot)} h rush`:""} / ${h(avail)} h</div>
     <div class="wl-bar"><span style="width:${Math.min(100,pct)}%;background:${col}"></span></div>`;
 }
 
@@ -1208,7 +1214,7 @@ function openEdit(j){
 /* ============================================================= PARAMÈTRES */
 function openSettings(){
   let sid=0; const nid=()=>"s"+(sid++);
-  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, newPin:"" };
+  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, weeklyHours:SETTINGS.weeklyHours, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
   draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even"}; });
@@ -1281,6 +1287,8 @@ function renderSettings(draft){
     <div class="set-row">
       <label class="set-lbl">Fin</label><input id="set-rush-end" type="time" value="${draft.rush.end||"13:20"}">
     </div>
+    <div class="set-row"><label class="set-lbl">Semaine (h)</label><input id="set-weekly" type="number" min="1" max="60" step="0.5" value="${draft.weeklyHours||42}"></div>
+    <div class="set-note">Durée de travail hebdomadaire de référence (Suisse : 42 h) — sert au calcul de la charge.</div>
     <div class="set-h">🌴 Absences / congés</div>
     <div class="set-note">Bloque un ou plusieurs jours : ils sont exclus du placement automatique.</div>
     <div class="set-row"><label class="set-lbl">Du</label><input id="set-abs-from" type="date"></div>
@@ -1350,6 +1358,7 @@ function renderSettings(draft){
   $("#set-rush-on").onchange=e=>{draft.rush.enabled=e.target.checked;};
   $("#set-rush-start").onchange=e=>{draft.rush.start=e.target.value;};
   $("#set-rush-end").onchange=e=>{draft.rush.end=e.target.value;};
+  { const w=$("#set-weekly"); if(w) w.onchange=e=>{ const v=parseFloat(e.target.value); if(v>0) draft.weeklyHours=v; }; }
   $("#set-pin").oninput=e=>{draft.newPin=e.target.value;};
   $("#set-abs-add").onclick=async()=>{
     const f=$("#set-abs-from").value, t=$("#set-abs-to").value||f;
@@ -1384,6 +1393,7 @@ async function saveSettingsFromDraft(draft){
 
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
   SETTINGS.rush={enabled:!!draft.rush.enabled,start:draft.rush.start,end:draft.rush.end,label:SETTINGS.rush.label||"Rush cuisine"};
+  if(draft.weeklyHours>0) SETTINGS.weeklyHours=draft.weeklyHours;
   if(draft.newPin&&draft.newPin.trim()) SETTINGS.pinHash=await sha256Hex(draft.newPin.trim());
 
   try{
