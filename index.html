@@ -49,6 +49,11 @@ html,body{margin:0}
 ::selection{background:rgba(28,143,129,.22)}
 :focus-visible{outline:none;box-shadow:var(--focus);border-radius:8px}
 @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important}}
+/* iOS zoome au focus si la police d'un champ < 16px : on force 16px en tactile */
+@media (pointer: coarse){
+  input, select, textarea, .field input, .field select, .field textarea,
+  .set-row input, .set-row select, .month-pick { font-size:16px !important; }
+}
 body{
   font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
   color:var(--ink); background:var(--paper);
@@ -1017,14 +1022,13 @@ overlay.onclick=e=>{if(e.target===overlay)closeSheet();};
 
 /* --- Demande directeur (clic sur créneau libre) --- */
 const FAULT_PRESETS=[
-  {label:"— Type (ajuste la durée)",dur:0},
-  {label:"Frigo / chambre froide",dur:120},
-  {label:"Machine à glace",dur:120},
-  {label:"Néon / éclairage",dur:30},
-  {label:"Plomberie / fuite",dur:60},
-  {label:"Électrique / disjoncteur",dur:60},
-  {label:"Cuisson / four / plaque",dur:90},
-  {label:"Autre",dur:60},
+  {label:"— Type d'intervention",dur:0},
+  {label:"Électricité générale",dur:60},
+  {label:"Éclairage / luminaire",dur:30},
+  {label:"Plomberie",dur:60},
+  {label:"Canalisation bouchée",dur:60},
+  {label:"Problème sur un équipement",dur:60,detail:"Quel équipement ?",prefix:"Équipement : "},
+  {label:"Autres",dur:60,detail:"Précisez l'objet",prefix:""},
 ];
 async function uploadPhoto(file){
   if(!SB||!file) return "";
@@ -1040,7 +1044,7 @@ async function uploadPhoto(file){
 function openRequest(dateStr,startDefault,rangeEnd){
   const dt=new Date(dateStr);
   const durOpts=[30,60,90,120,150,180].map(m=>`<option value="${m}">${m} min</option>`).join("");
-  const typeOpts=FAULT_PRESETS.map(t=>`<option value="${t.dur}">${esc(t.label)}</option>`).join("");
+  const typeOpts=FAULT_PRESETS.map((t,i)=>`<option value="${i}">${esc(t.label)}</option>`).join("");
   const siteDefault = State.site!=="__all__"?State.site:SETTINGS.sites[0];
   sheet.innerHTML=`
     <h3>Proposer une intervention</h3>
@@ -1048,12 +1052,13 @@ function openRequest(dateStr,startDefault,rangeEnd){
     <div class="info-auto">ℹ️ Une intervention n'est placée le matin que si c'est le site du jour. Sinon elle va l'après-midi ; et si la journée est pleine, elle passe au lendemain.</div>
     <div class="field"><label>Site concerné</label>
       <select id="f-site">${SETTINGS.sites.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
-    <div class="field"><label>Type de panne (facultatif)</label><select id="f-type">${typeOpts}</select></div>
+    <div class="field"><label>Type d'intervention</label><select id="f-type">${typeOpts}</select></div>
+    <div class="field" id="f-detail-wrap" style="display:none"><label id="f-detail-lbl">Précisez</label><input id="f-detail" placeholder=""></div>
     <div class="field"><label>Objet de l'intervention</label>
-      <input id="f-title" placeholder="Ex : fuite bac à graisse, néon HS, frigo en alarme…"></div>
+      <input id="f-title" placeholder="Ex : néon HS couloir, fuite sous évier…"></div>
     <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
-    <label class="urg-box"><input type="checkbox" id="f-urgent"> <span>🚨 Urgent — alerte immédiate à Thibaut</span></label>
-    <div class="field"><label>Photo de la panne (facultatif)</label><input id="f-photo" type="file" accept="image/*"></div>
+    <label class="urg-box"><input type="checkbox" id="f-urgent"> <span>🚨 Urgent — alerte immédiate</span></label>
+    <div class="field"><label>Photo de la panne (facultatif)</label><input id="f-photo" type="file" accept="image/*" capture="environment"></div>
     <div class="field"><label>Précisions (facultatif)</label>
       <textarea id="f-notes" placeholder="Détails utiles, niveau d'urgence, matériel concerné…"></textarea></div>
     <div class="field"><label>Votre nom</label><input id="f-by" placeholder="Directeur / site"></div>
@@ -1064,10 +1069,25 @@ function openRequest(dateStr,startDefault,rangeEnd){
     </div>`;
   overlay.classList.add("open");
   $("#f-cancel").onclick=closeSheet;
-  $("#f-title").focus?.();
-  $("#f-type").onchange=e=>{ const d=parseInt(e.target.value,10); if(d) $("#f-dur").value=String(d); };
+  $("#f-type").onchange=e=>{
+    const t=FAULT_PRESETS[+e.target.value]||{};
+    if(t.dur) $("#f-dur").value=String(t.dur);
+    const wrap=$("#f-detail-wrap");
+    if(t.detail){
+      wrap.style.display="";
+      $("#f-detail-lbl").textContent=t.detail;
+      $("#f-detail").placeholder=t.detail;
+      $("#f-detail").value="";
+      $("#f-detail").focus?.();
+    } else {
+      wrap.style.display="none";
+      if(+e.target.value>0 && t.label) $("#f-title").value=t.label;
+    }
+  };
   $("#f-send").onclick=async()=>{
-    const title=$("#f-title").value.trim();
+    const ti=+$("#f-type").value, tp=FAULT_PRESETS[ti]||{};
+    let title=$("#f-title").value.trim();
+    if(tp.detail){ const det=($("#f-detail").value||"").trim(); if(det) title=(tp.prefix||"")+det; }
     if(!title){toast("Indique l'objet de l'intervention",true);return;}
     if(State.role!=="admin" && !rateOk()){toast("Trop de demandes en peu de temps — patiente une minute",true);return;}
     const dur=parseInt($("#f-dur").value,10);
