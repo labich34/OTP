@@ -139,7 +139,7 @@ header.app{
 .chip{width:11px;height:11px;border-radius:3px;display:inline-block}
 .chip.free{background:var(--free)} .chip.busy{background:var(--busy)}
 .chip.req{background:var(--req)} .chip.prio{background:var(--prio)}
-.chip.confirmed{background:var(--confirmed)}
+.chip.confirmed{background:#0f9d58}
 .chip.rush{background:repeating-linear-gradient(45deg,#cdbf9f,#cdbf9f 3px,#b9a986 3px,#b9a986 6px)}
 
 /* ---------- Grille semaine ---------- */
@@ -168,6 +168,8 @@ header.app{
 .chip-move{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;
   background:var(--req-bg);color:var(--req);border:1px solid #f0dcab;border-radius:999px;padding:1px 8px;margin-left:6px}
 .reco{color:var(--free);font-weight:600}
+.site-tag{background:rgba(23,122,66,.12);color:#177a42;font-weight:800;letter-spacing:.2px}
+.state.confirmed{color:#0f9d58 !important}
 .info-auto{background:#eaf3ff;border:1px solid #cfe0f7;color:#2c4a6e;border-radius:10px;
   padding:8px 10px;font-size:12px;line-height:1.35;margin-bottom:12px}
 .set-h{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.6px;
@@ -370,7 +372,6 @@ header.app{
   <button class="btn ghost small" id="settingsBtn" style="display:none">⚙ Paramètres</button>
 </div>
 
-<div id="weekLoad" class="weekload" style="display:none"></div>
 
 <div class="legend">
   <b><span class="chip free"></span> Libre</b>
@@ -439,6 +440,7 @@ const CONFIG = {
     { label: "Nettoyage machine à glace — petite (2 h)", title: "Nettoyage machine à glace (petite)", durMin: 120  },
     { label: "Nettoyage PEP (durée variable)",           title: "Nettoyage PEP",                       durMin: null },
     { label: "Livraison (durée variable)",                title: "Livraison",                           durMin: null },
+    { label: "RGRV — contrôle propreté & qualité (annuel, journée)", title: "RGRV — contrôle propreté & qualité", durMin: 540 },
   ],
 
   /* --- 6. Planning RÉCURRENT — vide par défaut, à saisir dans l'appli ---
@@ -806,7 +808,7 @@ function render(){
   $("#weekLabel").firstChild.nodeValue=`${fmtDay(ws)} – ${fmtDay(we)}`;
   $("#weekSub").textContent=`Semaine ${weekNum(ws)} · ${ws.getFullYear()}`;
   { const mp=$("#monthPick"); if(mp) mp.value=`${ws.getFullYear()}-${pad(ws.getMonth()+1)}`; }
-  updateWeekLoad(ws);
+  // (indicateur de charge retiré à la demande)
   const isAdmin=State.role==="admin";
   $("#btnResponsable").classList.toggle("active",isAdmin);
   $("#btnDirecteur").classList.toggle("active",!isAdmin);
@@ -904,7 +906,7 @@ function jobRow(j){
     <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
     <div class="body">
       <div class="title">${esc(j.title)}</div>
-      <div class="meta"><span class="tag" style="background:var(--busy-bg);color:var(--busy)">${esc(j.site)}</span>${offsite?`<span class="chip-move">⚠ déplacement</span>`:``}${j.urgent?`<span class="chip-urgent">🚨 urgent</span>`:``}${stateTxt}</div>
+      <div class="meta"><span class="tag site-tag">${esc(j.site)}</span>${j.urgent?`<span class="chip-urgent">🚨 urgent</span>`:``}${stateTxt}</div>
       ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:``}
       ${j.photo_url?`<div class="meta"><a href="${esc(j.photo_url)}" target="_blank" rel="noopener">📷 Voir la photo</a></div>`:``}
       ${j.requested_by&&j.source==="adhoc"?`<div class="meta">Demandé par ${esc(j.requested_by)}</div>`:``}
@@ -1051,6 +1053,7 @@ const FAULT_PRESETS=[
   {label:"Éclairage / luminaire",dur:30},
   {label:"Plomberie",dur:60},
   {label:"Canalisation bouchée",dur:60},
+  {label:"RGRV — contrôle propreté & qualité (journée)",dur:540},
   {label:"Problème sur un équipement",dur:60,detail:"Quel équipement ?",prefix:"Équipement : "},
   {label:"Autres",dur:60,detail:"Précisez l'objet",prefix:""},
 ];
@@ -1069,7 +1072,9 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
   opts=opts||{};
   const urgentOnly=!!opts.urgentOnly;
   const dt=new Date(dateStr);
-  const durOpts=[30,60,90,120,150,180].map(m=>`<option value="${m}">${m} min</option>`).join("");
+  const fmtDur=m=>{ const h=Math.floor(m/60), r=m%60; return h?(h+"h"+(r?String(r).padStart(2,"0"):"")):(r+"min"); };
+  const durOpts=[30,60,90,120,150,180,210,240,300,360,420,480,540].map(m=>
+    `<option value="${m}">${fmtDur(m)}</option>`).join("");
   const typeOpts=FAULT_PRESETS.map((t,i)=>`<option value="${i}">${esc(t.label)}</option>`).join("");
   const siteDefault = State.site!=="__all__"?State.site:SETTINGS.sites[0];
   sheet.innerHTML=`
