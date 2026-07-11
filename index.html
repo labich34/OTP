@@ -839,7 +839,16 @@ function render(){
   const ws=State.weekStart, we=addDays(ws,6);
   $("#weekLabel").firstChild.nodeValue=`${fmtDay(ws)} – ${fmtDay(we)}`;
   $("#weekSub").textContent=`Semaine ${weekNum(ws)} · ${ws.getFullYear()}`;
-  { const mp=$("#monthPick"); if(mp) mp.value=`${ws.getFullYear()}-${pad(ws.getMonth()+1)}`; }
+  { const mp=$("#monthPick");
+    if(mp){
+      const v=`${ws.getFullYear()}-${pad(ws.getMonth()+1)}`;
+      if(![...mp.options].some(o=>o.value===v)){
+        const o=document.createElement("option");
+        o.value=v; o.textContent=`${MONTHS_FR[ws.getMonth()]} ${ws.getFullYear()}`;
+        mp.insertBefore(o,mp.firstChild);
+      }
+      mp.value=v;
+    } }
   // (indicateur de charge retiré à la demande)
   const isAdmin=State.role==="admin";
   $("#btnResponsable").classList.toggle("active",isAdmin);
@@ -1861,10 +1870,12 @@ function bindSiteFilter(){
 }
 function bindMonthPick(){
   const sel=$("#monthPick"); if(!sel) return;
-  const y0=new Date().getFullYear()-1;
+  const now=new Date();
   let html="";
-  for(let y=y0;y<=y0+4;y++) for(let m=1;m<=12;m++)
-    html+=`<option value="${y}-${pad(m)}">${MONTHS_FR[m-1]} ${y}</option>`;
+  for(let i=-2;i<12;i++){   // 2 mois passés + 12 mois à venir
+    const d=new Date(now.getFullYear(),now.getMonth()+i,1);
+    html+=`<option value="${d.getFullYear()}-${pad(d.getMonth()+1)}">${MONTHS_FR[d.getMonth()]} ${d.getFullYear()}</option>`;
+  }
   sel.innerHTML=html;
 }
 function bindUI(){
