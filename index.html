@@ -205,6 +205,16 @@ header.app{
 .info-i{width:18px;height:18px;flex:none;border-radius:50%;border:1px solid currentColor;background:transparent;
   color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:1;cursor:pointer;padding:0}
 .info-i:hover{background:rgba(0,0,0,.06)}
+.dir-grid{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px}
+.dir-chip{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:13px;font-weight:700;
+  padding:8px 12px;border-radius:999px;cursor:pointer;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line-strong);transition:.15s}
+.dir-chip:hover{border-color:var(--brand)}
+.dir-chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.dir-chip .dir-site{font-weight:500;font-size:11px;opacity:.7}
+.dir-chip .dir-n{min-width:19px;height:19px;padding:0 5px;border-radius:999px;font-size:11px;
+  display:inline-flex;align-items:center;justify-content:center;background:rgba(38,48,63,.10)}
+.dir-chip.on .dir-n{background:rgba(255,255,255,.28)}
 .move-grp{display:inline-flex;gap:2px;margin:0 2px}
 .chip-urgent{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;
   background:#fde3e3;color:#c8102e;border:1px solid #f3c3c3;border-radius:999px;padding:1px 8px;margin-left:6px}
@@ -364,7 +374,7 @@ header.app{
   <button class="btn ghost small" id="tourBtn">🚗 Tournée</button>
   <button class="btn ghost small" id="monthBtn">📊 Mois</button>
   <button class="btn ghost small" id="reportBtn">📄 Rapport</button>
-  <button class="btn ghost small" id="myReqBtn" style="display:none">📋 Mes demandes</button>
+  <button class="btn ghost small" id="myReqBtn">📋 Demandes</button>
   <div class="site-select">
     <select id="siteFilter" aria-label="Filtrer par site"></select>
   </div>
@@ -417,11 +427,16 @@ const CONFIG = {
   ADMIN_PIN_HASH: "a1fb4e703a9ef1fa4936801721ff285a97ac85330856674412e054892afe6972",
 
   /* --- 4. Tes sites (renomme librement) --- */
-  SITES: ["Resto Nyon Gare", "Resto Gland", "Resto Signy", "Crèche La Côte"],
+  SITES: ["Resto Nyon Gare", "Resto Gland", "Nyon Drive", "Crèche La Côte"],
 
   /* --- 5b. Site où tu es posté chaque jour (regroupe le travail, évite les trajets) ---
      1=Lundi … 5=Vendredi. Mets ici ta tournée réelle.                                  */
-  BASE_SITE: { 1:"Resto Gland", 2:"Resto Nyon Gare", 3:"Resto Signy", 4:"Crèche La Côte", 5:"Resto Nyon Gare" },
+  BASE_SITE: { 1:"Resto Gland", 2:"Resto Nyon Gare", 3:"Nyon Drive", 4:"Crèche La Côte", 5:"Resto Nyon Gare" },
+
+  /* --- 5b-bis. Directeur(s) de chaque site — le 1er est le principal,
+     les suivants sont adjoints / remplaçants (séparés par « , ») ---
+     Modifiable dans l'appli : ⚙ Paramètres > Sites.          */
+  DIRECTORS: { "Resto Gland":"Vlad", "Resto Nyon Gare":"Kylian", "Nyon Drive":"Amandine, Kevin", "Crèche La Côte":"Jeremy" },
 
   /* --- 5. Horaires de travail affichés --- */
   HOURS: { start: 7, end: 16, slotMin: 30, days: 5 }, // 07h→16h, Lun→Ven
@@ -496,6 +511,7 @@ const State={
 let SB=null;
 const SETTINGS = {
   sites: CONFIG.SITES.slice(),
+  directors: {...(CONFIG.DIRECTORS||{})},
   recurring: CONFIG.RECURRING.map(x=>({...x})),
   baseSite: {...CONFIG.BASE_SITE},
   rush: {...CONFIG.RUSH},
@@ -510,6 +526,7 @@ async function sha256Hex(s){
 function applySettings(d){
   if(!d||typeof d!=="object") return;
   if(Array.isArray(d.sites)&&d.sites.length) SETTINGS.sites=d.sites.slice();
+  if(d.directors&&typeof d.directors==="object") SETTINGS.directors={...d.directors};
   if(Array.isArray(d.recurring)) SETTINGS.recurring=d.recurring.map(x=>({...x}));
   if(d.baseSite&&typeof d.baseSite==="object") SETTINGS.baseSite={...d.baseSite};
   if(d.rush&&typeof d.rush==="object") SETTINGS.rush={...CONFIG.RUSH,...d.rush};
@@ -529,7 +546,7 @@ async function loadSettings(){
   }catch(e){ console.warn("loadSettings",e); }
 }
 async function saveSettings(){
-  const payload={sites:SETTINGS.sites,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,weeklyHours:SETTINGS.weeklyHours,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
+  const payload={sites:SETTINGS.sites,directors:SETTINGS.directors,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,weeklyHours:SETTINGS.weeklyHours,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
   if(SB){
     const {error}=await SB.from("app_settings").upsert({id:1,data:payload,updated_at:new Date().toISOString()});
     if(error) throw error;
@@ -626,6 +643,15 @@ async function notify(title,body,opts){
   await Promise.allSettled(tasks);
 }
 function slug(s){ return (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+/* Directeurs : plusieurs noms possibles par site (séparés par virgule) */
+function dirsOfSite(site){ return String((SETTINGS.directors||{})[site]||"").split(",").map(x=>x.trim()).filter(Boolean); }
+function allDirs(){ const a=[]; SETTINGS.sites.forEach(s=>dirsOfSite(s).forEach(n=>{ if(!a.includes(n)) a.push(n); })); return a; }
+function siteOfDir(name){ return SETTINGS.sites.find(s=>dirsOfSite(s).some(n=>n.toLowerCase()===String(name).toLowerCase())); }
+function dirRole(name){
+  const s=siteOfDir(name); if(!s) return "";
+  const i=dirsOfSite(s).findIndex(n=>n.toLowerCase()===String(name).toLowerCase());
+  return i===0?"principal":i>0?"adjoint":"";
+}
 async function notifySite(site,title,body,opts){
   if(!CONFIG.NTFY_TOPIC) return;
   await notify(title,body,Object.assign({topic:CONFIG.NTFY_TOPIC+"-"+slug(site)},opts||{}));
@@ -814,7 +840,7 @@ function render(){
   $("#btnDirecteur").classList.toggle("active",!isAdmin);
   $("#addBtn").style.display=isAdmin?"":"none";
   $("#settingsBtn").style.display=isAdmin?"":"none";
-  $("#myReqBtn").style.display=isAdmin?"none":"";
+  // bouton Demandes visible dans les deux modes
   $("#demoBanner").style.display=Store.mode==="demo"?"":"none";
   $("#brand-sub").textContent = supaOn && Store.mode==="supabase" ? "Maintenance — partagé en temps réel" : "Maintenance — Groupe La Côte";
 
@@ -1053,6 +1079,7 @@ const FAULT_PRESETS=[
   {label:"Éclairage / luminaire",dur:30},
   {label:"Plomberie",dur:60},
   {label:"Canalisation bouchée",dur:60},
+  {label:"Nettoyage Karcher",dur:120},
   {label:"RGRV — contrôle propreté & qualité (journée)",dur:540},
   {label:"Problème sur un équipement",dur:60,detail:"Quel équipement ?",prefix:"Équipement : "},
   {label:"Autres",dur:60,detail:"Précisez l'objet",prefix:""},
@@ -1077,6 +1104,14 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     `<option value="${m}">${fmtDur(m)}</option>`).join("");
   const typeOpts=FAULT_PRESETS.map((t,i)=>`<option value="${i}">${esc(t.label)}</option>`).join("");
   const siteDefault = State.site!=="__all__"?State.site:SETTINGS.sites[0];
+  const dirList=allDirs();
+  const dirDefault=dirsOfSite(siteDefault)[0]||"";
+  const dirOpts=[`<option value="">— Choisir votre nom</option>`]
+    .concat(dirList.map(n=>{
+      const rl=dirRole(n);
+      return `<option value="${esc(n)}" ${n===dirDefault?"selected":""}>${esc(n)}${rl==="adjoint"?" (adjoint)":""}</option>`;
+    }))
+    .concat([`<option value="Autre">Autre / remplaçant</option>`]).join("");
   sheet.innerHTML=`
     <h3>${urgentOnly?"🚨 Demande urgente":"Proposer une intervention"}</h3>
     <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)}${urgentOnly?" · journée pleine ou bloquée":` · créneau libre ${startDefault}–${rangeEnd}`}</div>
@@ -1096,7 +1131,8 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     <div class="field"><label>Photo de la panne (facultatif)</label><input id="f-photo" type="file" accept="image/*"></div>
     <div class="field"><label>Précisions${urgentOnly?" — pourquoi est-ce urgent ?":" (facultatif)"}</label>
       <textarea id="f-notes" placeholder="${urgentOnly?"Panne bloquante, sécurité, fuite…":"Détails utiles, matériel concerné…"}"></textarea></div>
-    <div class="field"><label>Votre nom</label><input id="f-by" placeholder="Directeur / site"></div>
+    <div class="field"><label>Votre nom</label>
+      <select id="f-by">${dirOpts}</select></div>
 
     <div class="sheet-actions">
       <button class="btn" id="f-cancel">Annuler</button>
@@ -1104,6 +1140,11 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     </div>`;
   overlay.classList.add("open");
   $("#f-cancel").onclick=closeSheet;
+  $("#f-site").onchange=e=>{
+    const n=dirsOfSite(e.target.value)[0];
+    const sel=$("#f-by");
+    if(n && [...sel.options].some(o=>o.value===n)) sel.value=n;
+  };
   $("#f-type").onchange=e=>{
     const t=FAULT_PRESETS[+e.target.value]||{};
     if(t.dur) $("#f-dur").value=String(t.dur);
@@ -1126,7 +1167,8 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     if(!title){toast("Indique l'objet de l'intervention",true);return;}
     if(State.role!=="admin" && !rateOk()){toast("Trop de demandes en peu de temps — patiente une minute",true);return;}
     const dur=parseInt($("#f-dur").value,10);
-    const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim()||"Directeur";
+    const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim();
+    if(!by){toast("Choisis ton nom dans la liste",true);return;}
     const urgent=urgentOnly?true:$("#f-urgent").checked;
 
     const file=$("#f-photo").files&&$("#f-photo").files[0];
@@ -1283,7 +1325,7 @@ function openEdit(j){
 /* ============================================================= PARAMÈTRES */
 function openSettings(){
   let sid=0; const nid=()=>"s"+(sid++);
-  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, weeklyHours:SETTINGS.weeklyHours, blockFrom:"", blockTo:"", calM:null, newPin:"" };
+  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name,dir:(SETTINGS.directors||{})[name]||""})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, weeklyHours:SETTINGS.weeklyHours, blockFrom:"", blockTo:"", calM:null, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
   draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even"}; });
@@ -1297,6 +1339,7 @@ function renderSettings(draft){
   const sitesHtml=draft.sites.map((s,i)=>`
     <div class="set-row">
       <input class="set-site-name" data-i="${i}" value="${esc(s.name)}" placeholder="Nom du site">
+      <input class="set-site-dir" data-i="${i}" value="${esc(s.dir||"")}" placeholder="Directeur(s), séparés par ,">
       <button class="btn small danger set-site-del" data-i="${i}">✕</button>
     </div>`).join("");
   const baseHtml=[1,2,3,4,5].map(w=>`
@@ -1333,6 +1376,7 @@ function renderSettings(draft){
     <h3>⚙ Paramètres</h3>
     <div class="sub">Mode responsable · modifications partagées avec tous</div>
     <div class="set-h">🏢 Sites</div>
+    <div class="set-note">Un site peut avoir plusieurs directeurs : sépare les noms par une virgule. Le <b>premier est le principal</b>, les suivants sont adjoints / remplaçants (ex. « Amandine, Kevin »).</div>
     ${sitesHtml}
     <button class="btn small" id="set-add-site">+ Ajouter un site</button>
     <div class="set-h">📍 Site du jour</div>
@@ -1415,6 +1459,7 @@ function renderSettings(draft){
   overlay.classList.add("open");
 
   sheet.querySelectorAll(".set-site-name").forEach(o=>o.oninput=()=>{draft.sites[+o.dataset.i].name=o.value;});
+  sheet.querySelectorAll(".set-site-dir").forEach(o=>o.oninput=()=>{draft.sites[+o.dataset.i].dir=o.value;});
   sheet.querySelectorAll(".set-base").forEach(o=>o.onchange=()=>{draft.baseSite[+o.dataset.w]=o.value;});
   sheet.querySelectorAll(".set-rec-preset").forEach(o=>o.onchange=()=>{
     const p=CONFIG.TASK_PRESETS[+o.value]; if(!p) return;
@@ -1432,7 +1477,7 @@ function renderSettings(draft){
   sheet.querySelectorAll(".set-rec-parity").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].parity=o.value;});
   sheet.querySelectorAll(".set-site-del").forEach(b=>b.onclick=()=>{draft.sites.splice(+b.dataset.i,1);renderSettings(draft);});
   sheet.querySelectorAll(".set-rec-del").forEach(b=>b.onclick=()=>{draft.recurring.splice(+b.dataset.i,1);renderSettings(draft);});
-  $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:""});renderSettings(draft);};
+  $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:"",dir:""});renderSettings(draft);};
   $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00",freq:1,parity:"even"});renderSettings(draft);};
   { const cr=$("#set-clear-rec"); if(cr) cr.onclick=()=>{ if(confirm("Effacer toutes les tâches récurrentes ? (à confirmer par Enregistrer)")){ draft.recurring=[]; renderSettings(draft); } }; }
   $("#set-cancel").onclick=closeSheet;
@@ -1518,6 +1563,7 @@ async function saveSettingsFromDraft(draft){
       freq:r.freq===2?2:1,parity:r.freq===2?(r.parity==="odd"?"odd":"even"):"even"}));
 
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
+  { const dm={}; draft.sites.forEach((s,i)=>{ const dn=(s.dir||"").trim(); if(dn) dm[names[i]]=dn; }); SETTINGS.directors=dm; }
   SETTINGS.rush={enabled:!!draft.rush.enabled,start:draft.rush.start,end:draft.rush.end,label:SETTINGS.rush.label||"Rush cuisine"};
   if(draft.weeklyHours>0) SETTINGS.weeklyHours=draft.weeklyHours;
   if(draft.newPin&&draft.newPin.trim()) SETTINGS.pinHash=await sha256Hex(draft.newPin.trim());
@@ -1553,10 +1599,9 @@ async function openTour(dateStr){
   const bSite=baseSiteFor(day);
   const sitesHtml = Object.keys(bySite).length ? Object.keys(bySite).sort((a,b)=>(a===bSite?-1:b===bSite?1:0)).map(site=>`
       <div class="tour-site">
-        <div class="tour-site-h"><b>${esc(site)}</b>${site===bSite?' <span class="reco">★ site du jour</span>':''}
-          <a class="btn small" href="${mapsLink(site)}" target="_blank" rel="noopener">🗺 Itinéraire</a></div>
+        <div class="tour-site-h"><b>${esc(site)}</b>${site===bSite?' <span class="reco">★ site du jour</span>':''}</div>
         ${bySite[site].map(r=>`<div class="tour-item"><span class="mono">${esc(r.start)}–${esc(r.end)}</span> ${esc(r.title)}
-          <span class="state ${r.status==="confirmed"?"confirmed":"req"}">${r.status==="confirmed"?"confirmé":"à confirmer"}</span></div>`).join("")}
+          ${r.source==="template"||r.status==="confirmed"?"":`<span class="state req">à confirmer</span>`}</div>`).join("")}
       </div>`).join("") : `<div class="set-note">Aucune intervention ce jour.</div>`;
   sheet.innerHTML=`
     <h3>🚗 Ma tournée</h3>
@@ -1613,11 +1658,17 @@ async function openHeatmap(){
   $("#hm-close").onclick=closeSheet;
 }
 
-/* --- Mes demandes (directeur) ------------------------------------------ */
+/* --- Demandes par directeur -------------------------------------------- */
 async function openMyRequests(){
   const saved=localStorage.getItem("planning_dirname")||"";
   const from=iso(addDays(new Date(),-30)), to=iso(addDays(new Date(),45));
   let rows=[]; try{ rows=await Store.range(from,to); }catch(e){}
+  const dirs=allDirs();
+  const others=[...new Set(rows.filter(r=>r.source==="adhoc"&&r.requested_by)
+    .map(r=>r.requested_by).filter(n=>!dirs.includes(n)))];
+  const all=dirs.concat(others);
+  const countOf=n=>rows.filter(r=>r.source==="adhoc"&&(r.requested_by||"").toLowerCase()===n.toLowerCase()).length;
+
   const build=name=>{
     const mine=rows.filter(r=>r.source==="adhoc"&&(r.requested_by||"").toLowerCase()===name.toLowerCase())
       .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:toMin(a.start)-toMin(b.start));
@@ -1628,19 +1679,31 @@ async function openMyRequests(){
         :r.status==="refused"?`<span class="state" style="color:var(--prio)">refusée</span>`
         :esc(r.status);
       const reason=(r.status==="refused"&&/REFUSÉ ?:/i.test(r.notes||""))?`<br><span class="meta">${esc((r.notes||"").split(/REFUSÉ ?:/i).pop().trim())}</span>`:``;
-      return `<div class="tour-item"><b>${esc(r.title)}</b> ${st}<br>
-        <span class="meta">${esc(r.site)} · ${DAYS_FR[d.getDay()]} ${fmtDay(d)} · ${esc(r.start)}–${esc(r.end)}</span>${reason}</div>`;
-    }).join(""):`<div class="set-note">Aucune demande à ton nom (30 j passés → 45 j à venir).</div>`;
+      const when=isOverflow(r)?`<b>hors planning (urgence)</b>`:`${esc(r.start)}–${esc(r.end)}`;
+      return `<div class="tour-item">${r.urgent?"🚨 ":""}<b>${esc(r.title)}</b> ${st}<br>
+        <span class="meta">${esc(r.site)} · ${DAYS_FR[d.getDay()]} ${fmtDay(d)} · ${when}</span>${reason}</div>`;
+    }).join(""):`<div class="set-note">Aucune demande (30 j passés → 45 j à venir).</div>`;
   };
+  const chips=all.map(n=>{
+    const site=siteOfDir(n);
+    const rl=dirRole(n);
+    return `<button class="dir-chip${n===saved?" on":""}" data-dir="${esc(n)}">${esc(n)}
+      ${site?`<span class="dir-site">${esc(site)}${rl==="adjoint"?" · adjoint":""}</span>`:""}<span class="dir-n">${countOf(n)}</span></button>`;
+  }).join("");
+
   sheet.innerHTML=`
-    <h3>📋 Mes demandes</h3>
-    <div class="sub">Suivi du statut de tes demandes</div>
-    <div class="field"><label>Ton nom (tel que saisi dans les demandes)</label>
-      <input id="mr-name" value="${esc(saved)}" placeholder="Ex : Directeur Gland"></div>
-    <div id="mr-list">${saved?build(saved):`<div class="set-note">Saisis ton nom pour voir tes demandes.</div>`}</div>
+    <h3>📋 Demandes par directeur</h3>
+    <div class="sub">Touche un nom pour voir toutes ses demandes</div>
+    <div class="dir-grid">${chips||`<div class="set-note">Aucun directeur enregistré (⚙ Paramètres > Sites).</div>`}</div>
+    <div id="mr-list">${saved?build(saved):`<div class="set-note">Choisis un directeur ci-dessus.</div>`}</div>
     <div class="sheet-actions"><button class="btn primary" id="mr-close">Fermer</button></div>`;
   overlay.classList.add("open");
-  $("#mr-name").oninput=e=>{ const v=e.target.value.trim(); localStorage.setItem("planning_dirname",v); $("#mr-list").innerHTML=v?build(v):`<div class="set-note">Saisis ton nom pour voir tes demandes.</div>`; };
+  sheet.querySelectorAll("[data-dir]").forEach(b=>b.onclick=()=>{
+    const n=b.dataset.dir;
+    localStorage.setItem("planning_dirname",n);
+    sheet.querySelectorAll("[data-dir]").forEach(x=>x.classList.toggle("on",x===b));
+    $("#mr-list").innerHTML=build(n);
+  });
   $("#mr-close").onclick=closeSheet;
 }
 
