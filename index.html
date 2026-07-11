@@ -643,9 +643,15 @@ async function notify(title,body,opts){
   await Promise.allSettled(tasks);
 }
 function slug(s){ return (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
-/* Directeurs : plusieurs noms possibles par site (séparés par virgule) */
+/* Directeurs : liste de secours (utilisée si un site n'a pas de directeur défini) */
+const DIRECTOR_FALLBACK = ["Vlad","Kylian","Amandine","Kevin","Jeremy"];
 function dirsOfSite(site){ return String((SETTINGS.directors||{})[site]||"").split(",").map(x=>x.trim()).filter(Boolean); }
-function allDirs(){ const a=[]; SETTINGS.sites.forEach(s=>dirsOfSite(s).forEach(n=>{ if(!a.includes(n)) a.push(n); })); return a; }
+function allDirs(){
+  const a=[];
+  SETTINGS.sites.forEach(s=>dirsOfSite(s).forEach(n=>{ if(!a.includes(n)) a.push(n); }));
+  DIRECTOR_FALLBACK.forEach(n=>{ if(!a.includes(n)) a.push(n); });   // garantit tous les noms
+  return a;
+}
 function siteOfDir(name){ return SETTINGS.sites.find(s=>dirsOfSite(s).some(n=>n.toLowerCase()===String(name).toLowerCase())); }
 function dirRole(name){
   const s=siteOfDir(name); if(!s) return "";
@@ -1110,8 +1116,7 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     .concat(dirList.map(n=>{
       const rl=dirRole(n);
       return `<option value="${esc(n)}" ${n===dirDefault?"selected":""}>${esc(n)}${rl==="adjoint"?" (adjoint)":""}</option>`;
-    }))
-    .concat([`<option value="Autre">Autre / remplaçant</option>`]).join("");
+    })).join("");
   sheet.innerHTML=`
     <h3>${urgentOnly?"🚨 Demande urgente":"Proposer une intervention"}</h3>
     <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)}${urgentOnly?" · journée pleine ou bloquée":` · créneau libre ${startDefault}–${rangeEnd}`}</div>
@@ -1664,9 +1669,7 @@ async function openMyRequests(){
   const from=iso(addDays(new Date(),-30)), to=iso(addDays(new Date(),45));
   let rows=[]; try{ rows=await Store.range(from,to); }catch(e){}
   const dirs=allDirs();
-  const others=[...new Set(rows.filter(r=>r.source==="adhoc"&&r.requested_by)
-    .map(r=>r.requested_by).filter(n=>!dirs.includes(n)))];
-  const all=dirs.concat(others);
+  const all=dirs;   // seulement les directeurs (pas "Responsable", ni les noms libres)
   const countOf=n=>rows.filter(r=>r.source==="adhoc"&&(r.requested_by||"").toLowerCase()===n.toLowerCase()).length;
 
   const build=name=>{
