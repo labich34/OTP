@@ -195,6 +195,14 @@ header.app{
 .rush-toggle label{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
 .rush-toggle input{width:16px;height:16px;accent-color:var(--brand)}
 .rush-toggle.off{color:var(--req)}
+.row.urgonly{cursor:pointer;background:#fdeef0;border:1px dashed #e0908f;color:#a11;transition:.15s}
+.row.urgonly:hover{background:#fbe0e3;border-color:var(--prio);transform:translateY(-1px)}
+.row.urgonly .marker{width:4px;border-radius:3px;background:var(--prio);flex:none}
+.row.urgonly .title{color:#a11;display:flex;align-items:center;gap:7px}
+.row.urgonly .meta{color:#a45}
+.info-i{width:18px;height:18px;flex:none;border-radius:50%;border:1px solid currentColor;background:transparent;
+  color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:1;cursor:pointer;padding:0}
+.info-i:hover{background:rgba(0,0,0,.06)}
 .move-grp{display:inline-flex;gap:2px;margin:0 2px}
 .chip-urgent{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;
   background:#fde3e3;color:#c8102e;border:1px solid #f3c3c3;border-radius:999px;padding:1px 8px;margin-left:6px}
@@ -639,8 +647,9 @@ async function load(){
 }
 
 /* ================================================================= RENDU UI */
+function isOverflow(r){ return r.start==="00:00" && r.end==="00:01"; }
 function visibleRows(){
-  return State.rows.filter(r=>r.status!=="cancelled" && r.status!=="refused" &&
+  return State.rows.filter(r=>r.status!=="cancelled" && r.status!=="refused" && !isOverflow(r) &&
     (State.site==="__all__"||r.site===State.site));
 }
 
@@ -830,10 +839,25 @@ function render(){
     }
     const slots=el("div","slots");
     const items=dayTimeline(ds);
+    const hasFree=items.some(it=>it.free);
     if(!items.length){slots.appendChild(el("div","empty-day","Journée complète libre"));}
     for(const it of items){
       if(it.free) slots.appendChild(freeRow(ds,it));
       else slots.appendChild(jobRow(it.job));
+    }
+    if(!hasFree && items.length){
+      const u=el("div","row urgonly",
+        `<div class="marker"></div>
+         <div class="time mono">Urgence</div>
+         <div class="body"><div class="title">＋ Journée pleine — demande urgente uniquement
+           <button class="info-i" type="button" aria-label="Explication">i</button></div>
+         <div class="meta">Aucun créneau libre. Seule une <b>urgence</b> peut être ajoutée ici.</div></div>`);
+      u.querySelector(".info-i").onclick=e=>{
+        e.stopPropagation();
+        alert("Journée pleine ou bloquée (chantier / congé).\n\nLes demandes normales sont automatiquement reportées au prochain jour disponible.\n\nSi c'est une VRAIE urgence (panne bloquante, sécurité, fuite…), tu peux quand même déposer une demande : elle sera marquée 🚨 Urgent et Thibaut recevra une alerte immédiate pour arbitrer.");
+      };
+      u.onclick=()=>openRequest(ds,openHM(),closeHM(),{urgentOnly:true});
+      slots.appendChild(u);
     }
     card.appendChild(slots); wrap.appendChild(card);
   }
@@ -925,8 +949,8 @@ function renderInbox(){
   box.appendChild(h);
   reqs.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)).forEach(j=>{
     const c=el("div","inbox-card"+(j.urgent?" urgent":""));
-    c.innerHTML=`<h4>${j.urgent?'🚨 ':''}${esc(j.title)}</h4>
-      <div class="meta">${esc(j.site)} · ${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))} · ${esc(j.start)}–${esc(j.end)}${j.requested_by?` · par ${esc(j.requested_by)}`:''}</div>
+    c.innerHTML=`<h4>${j.urgent?'🚨 ':''}${esc(j.title)}${isOverflow(j)?' <span class="state" style="color:var(--prio)">· à caser</span>':''}</h4>
+      <div class="meta">${esc(j.site)} · ${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))}${isOverflow(j)?' · <b>hors planning (journée pleine)</b>':` · ${esc(j.start)}–${esc(j.end)}`}${j.requested_by?` · par ${esc(j.requested_by)}`:''}</div>
       ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:''}
       ${j.photo_url?`<div class="meta"><a href="${esc(j.photo_url)}" target="_blank" rel="noopener">📷 Voir la photo</a></div>`:''}
       <div class="inbox-actions">
@@ -1041,15 +1065,19 @@ async function uploadPhoto(file){
     return (data&&data.publicUrl)||"";
   }catch(e){ console.warn("photo upload",e); return ""; }
 }
-function openRequest(dateStr,startDefault,rangeEnd){
+function openRequest(dateStr,startDefault,rangeEnd,opts){
+  opts=opts||{};
+  const urgentOnly=!!opts.urgentOnly;
   const dt=new Date(dateStr);
   const durOpts=[30,60,90,120,150,180].map(m=>`<option value="${m}">${m} min</option>`).join("");
   const typeOpts=FAULT_PRESETS.map((t,i)=>`<option value="${i}">${esc(t.label)}</option>`).join("");
   const siteDefault = State.site!=="__all__"?State.site:SETTINGS.sites[0];
   sheet.innerHTML=`
-    <h3>Proposer une intervention</h3>
-    <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)} · créneau libre ${startDefault}–${rangeEnd}</div>
-    <div class="info-auto">ℹ️ Une intervention n'est placée le matin que si c'est le site du jour. Sinon elle va l'après-midi ; et si la journée est pleine, elle passe au lendemain.</div>
+    <h3>${urgentOnly?"🚨 Demande urgente":"Proposer une intervention"}</h3>
+    <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)}${urgentOnly?" · journée pleine ou bloquée":` · créneau libre ${startDefault}–${rangeEnd}`}</div>
+    ${urgentOnly
+      ? `<div class="info-auto" style="background:#fdeef0;border-color:#f3c9cf;color:#a11">🚨 Cette journée est <b>pleine ou bloquée</b> (chantier / congé). Seule une <b>vraie urgence</b> est acceptée ici : elle sera signalée hors planning et Thibaut recevra une alerte immédiate pour arbitrer.</div>`
+      : `<div class="info-auto">ℹ️ Une intervention n'est placée le matin que si c'est le site du jour. Sinon elle va l'après-midi ; et si la journée est pleine, elle passe au lendemain.</div>`}
     <div class="field"><label>Site concerné</label>
       <select id="f-site">${SETTINGS.sites.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
     <div class="field"><label>Type d'intervention</label><select id="f-type">${typeOpts}</select></div>
@@ -1057,15 +1085,17 @@ function openRequest(dateStr,startDefault,rangeEnd){
     <div class="field"><label>Objet de l'intervention</label>
       <input id="f-title" placeholder="Ex : néon HS couloir, fuite sous évier…"></div>
     <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
-    <label class="urg-box"><input type="checkbox" id="f-urgent"> <span>🚨 Urgent — alerte immédiate</span></label>
+    ${urgentOnly
+      ? `<label class="urg-box"><input type="checkbox" id="f-urgent" checked disabled> <span>🚨 Urgent — alerte immédiate (obligatoire ici)</span></label>`
+      : `<label class="urg-box"><input type="checkbox" id="f-urgent"> <span>🚨 Urgent — alerte immédiate</span></label>`}
     <div class="field"><label>Photo de la panne (facultatif)</label><input id="f-photo" type="file" accept="image/*"></div>
-    <div class="field"><label>Précisions (facultatif)</label>
-      <textarea id="f-notes" placeholder="Détails utiles, niveau d'urgence, matériel concerné…"></textarea></div>
+    <div class="field"><label>Précisions${urgentOnly?" — pourquoi est-ce urgent ?":" (facultatif)"}</label>
+      <textarea id="f-notes" placeholder="${urgentOnly?"Panne bloquante, sécurité, fuite…":"Détails utiles, matériel concerné…"}"></textarea></div>
     <div class="field"><label>Votre nom</label><input id="f-by" placeholder="Directeur / site"></div>
 
     <div class="sheet-actions">
       <button class="btn" id="f-cancel">Annuler</button>
-      <button class="btn primary" id="f-send">Envoyer la demande</button>
+      <button class="btn primary" id="f-send">${urgentOnly?"Envoyer l'urgence":"Envoyer la demande"}</button>
     </div>`;
   overlay.classList.add("open");
   $("#f-cancel").onclick=closeSheet;
@@ -1092,7 +1122,21 @@ function openRequest(dateStr,startDefault,rangeEnd){
     if(State.role!=="admin" && !rateOk()){toast("Trop de demandes en peu de temps — patiente une minute",true);return;}
     const dur=parseInt($("#f-dur").value,10);
     const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim()||"Directeur";
-    const urgent=$("#f-urgent").checked;
+    const urgent=urgentOnly?true:$("#f-urgent").checked;
+
+    const file=$("#f-photo").files&&$("#f-photo").files[0];
+
+    // Journée pleine/bloquée : l'urgence est déposée HORS créneau (à arbitrer par Thibaut)
+    if(urgentOnly){
+      if(!notes){ toast("Explique pourquoi c'est urgent",true); return; }
+      if(!confirm("Cette journée est pleine ou bloquée.\n\nL'urgence sera signalée hors planning et Thibaut décidera quoi décaler.\n\nConfirmer l'envoi ?")) return;
+      let photo_url="";
+      if(file){ toast("Envoi de la photo…"); photo_url=await uploadPhoto(file); }
+      await submitRequest({date:dateStr,site,title,start:"00:00",end:"00:01",notes,by,urgent:true,photo_url,
+        status:"requested",overflow:true,_urgentOnly:true});
+      return;
+    }
+
     const p=autoPlace(dateStr,site,dur);
     if(!p){ toast("Aucun créneau libre dans les prochains jours",true); return; }
     const end=toHM(toMin(p.start)+dur);
@@ -1100,7 +1144,6 @@ function openRequest(dateStr,startDefault,rangeEnd){
       const dObj=new Date(p.date);
       if(!confirm(`Journée pleine. Proposer plutôt ${DAYS_FR[dObj.getDay()]} ${fmtDay(dObj)} à ${p.start} ?`)) return;
     }
-    const file=$("#f-photo").files&&$("#f-photo").files[0];
     let photo_url="";
     if(file){ toast("Envoi de la photo…"); photo_url=await uploadPhoto(file); }
     await submitRequest({date:p.date,site,title,start:p.start,end,notes,by,urgent,photo_url,status:"requested",
@@ -1130,7 +1173,8 @@ async function submitRequest(d){
     `${d.title}\n${DAYS_FR[new Date(d.date).getDay()]} ${fmtDay(new Date(d.date))} ${d.start}–${d.end}\nPar ${d.by}${d.notes?"\n"+d.notes:""}${d.photo_url?"\n📷 photo jointe":""}`,
     d.urgent?{priority:"max",tags:"rotating_light"}:{});
   toast(
-    d._sameDay===false ? "Journée pleine — reportée au prochain jour ✔"
+    d._urgentOnly ? "Urgence transmise — Thibaut est alerté 🚨"
+    : d._sameDay===false ? "Journée pleine — reportée au prochain jour ✔"
     : d._base ? "Placée le matin (site du jour) ✔"
     : "Placée l'après-midi (autre site) ✔"
   );
@@ -1234,7 +1278,7 @@ function openEdit(j){
 /* ============================================================= PARAMÈTRES */
 function openSettings(){
   let sid=0; const nid=()=>"s"+(sid++);
-  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, weeklyHours:SETTINGS.weeklyHours, newPin:"" };
+  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, weeklyHours:SETTINGS.weeklyHours, blockFrom:"", blockTo:"", calM:null, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
   draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even"}; });
@@ -1309,12 +1353,24 @@ function renderSettings(draft){
     </div>
     <div class="set-row"><label class="set-lbl">Semaine (h)</label><input id="set-weekly" type="number" min="1" max="60" step="0.5" value="${draft.weeklyHours||42}"></div>
     <div class="set-note">Durée de travail hebdomadaire de référence (Suisse : 42 h) — sert au calcul de la charge.</div>
-    <div class="set-h">🌴 Absences / congés</div>
-    <div class="set-note">Bloque un ou plusieurs jours : ils sont exclus du placement automatique.</div>
-    <div class="set-row"><label class="set-lbl">Du</label><input id="set-abs-from" type="date"></div>
-    <div class="set-row"><label class="set-lbl">Au</label><input id="set-abs-to" type="date"></div>
-    <div class="set-row"><input id="set-abs-reason" placeholder="Motif (facultatif)"></div>
-    <button class="btn small" id="set-abs-add">Bloquer ces jours</button>
+    <div class="set-h">📅 Bloquer une période</div>
+    <div class="set-note">Congé, ou chantier sur un site (ex. 2 semaines à la crèche). Clique <b>deux dates</b> dans le calendrier (début, puis fin) ou remplis les champs. Les jours bloqués sortent du placement automatique.</div>
+    <div class="set-row" style="gap:8px">
+      <button class="btn small" id="cal-prev">‹</button>
+      <div id="cal-title" style="flex:1;text-align:center;font-weight:700;font-size:13px"></div>
+      <button class="btn small" id="cal-next">›</button>
+    </div>
+    <div class="hm-grid-h">${["L","M","M","J","V","S","D"].map(x=>`<span>${x}</span>`).join("")}</div>
+    <div class="hm-grid" id="cal-grid"></div>
+    <div class="set-row"><label class="set-lbl">Du</label><input id="set-abs-from" type="date" value="${esc(draft.blockFrom||"")}"></div>
+    <div class="set-row"><label class="set-lbl">Au</label><input id="set-abs-to" type="date" value="${esc(draft.blockTo||"")}"></div>
+    <div class="set-row"><label class="set-lbl">Motif</label>
+      <select id="set-abs-kind">
+        <option value="off">Absence / congé</option>
+        ${draft.sites.map(s=>`<option value="site:${esc(s.name)}">Chantier — ${esc(s.name||"(sans nom)")}</option>`).join("")}
+      </select></div>
+    <div class="set-row"><input id="set-abs-reason" placeholder="Précision (facultatif)"></div>
+    <button class="btn small danger" id="set-abs-add">Bloquer la période</button>
 
     <div class="set-h">📤 Exporter / sauvegarder</div>
     <div class="set-note">Télécharge tes interventions (30 j passés → 180 j à venir).</div>
@@ -1380,11 +1436,56 @@ function renderSettings(draft){
   $("#set-rush-end").onchange=e=>{draft.rush.end=e.target.value;};
   { const w=$("#set-weekly"); if(w) w.onchange=e=>{ const v=parseFloat(e.target.value); if(v>0) draft.weeklyHours=v; }; }
   $("#set-pin").oninput=e=>{draft.newPin=e.target.value;};
+
+  /* --- Calendrier de sélection de plage --- */
+  draft.calM = draft.calM || new Date(State.weekStart.getFullYear(),State.weekStart.getMonth(),1);
+  const syncInputs=()=>{ $("#set-abs-from").value=draft.blockFrom||""; $("#set-abs-to").value=draft.blockTo||""; };
+  const paintCal=()=>{
+    const first=new Date(draft.calM.getFullYear(),draft.calM.getMonth(),1);
+    const last=new Date(draft.calM.getFullYear(),draft.calM.getMonth()+1,0);
+    $("#cal-title").textContent=first.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+    const lead=(first.getDay()+6)%7;
+    let html="";
+    for(let i=0;i<lead;i++) html+=`<div class="hm-cell empty"></div>`;
+    for(let d=1;d<=last.getDate();d++){
+      const dObj=new Date(first.getFullYear(),first.getMonth(),d);
+      const ds=iso(dObj), wd=dObj.getDay(), we=(wd===0||wd===6);
+      const inRange = draft.blockFrom && draft.blockTo && ds>=draft.blockFrom && ds<=draft.blockTo;
+      const isEdge  = ds===draft.blockFrom || ds===draft.blockTo;
+      const bg = we?"transparent" : isEdge?"var(--prio)" : inRange?"rgba(224,96,63,.28)" : "transparent";
+      const col= isEdge?"#fff":"var(--ink)";
+      html+=`<button class="hm-cell${we?" weekend":""}" data-cal="${ds}" ${we?"disabled":""}
+        style="background:${bg};color:${col}"><span class="hm-n" style="color:${col}">${d}</span></button>`;
+    }
+    $("#cal-grid").innerHTML=html;
+    $("#cal-grid").querySelectorAll("[data-cal]").forEach(b=>b.onclick=()=>{
+      const ds=b.dataset.cal;
+      if(!draft.blockFrom || (draft.blockFrom && draft.blockTo)){ draft.blockFrom=ds; draft.blockTo=""; }
+      else if(ds<draft.blockFrom){ draft.blockTo=draft.blockFrom; draft.blockFrom=ds; }
+      else { draft.blockTo=ds; }
+      syncInputs(); paintCal();
+    });
+  };
+  paintCal();
+  $("#cal-prev").onclick=()=>{ draft.calM=new Date(draft.calM.getFullYear(),draft.calM.getMonth()-1,1); paintCal(); };
+  $("#cal-next").onclick=()=>{ draft.calM=new Date(draft.calM.getFullYear(),draft.calM.getMonth()+1,1); paintCal(); };
+  $("#set-abs-from").onchange=e=>{ draft.blockFrom=e.target.value; paintCal(); };
+  $("#set-abs-to").onchange=e=>{ draft.blockTo=e.target.value; paintCal(); };
+
   $("#set-abs-add").onclick=async()=>{
     const f=$("#set-abs-from").value, t=$("#set-abs-to").value||f;
-    if(!f){toast("Choisis une date",true);return;}
-    const n=await addAbsence(f,t,$("#set-abs-reason").value.trim());
-    closeSheet(); toast(n?`${n} jour(s) bloqué(s) ✔`:"Aucun jour ouvré dans cette plage",!n); await load();
+    if(!f){toast("Choisis une date (ou clique dans le calendrier)",true);return;}
+    const kind=$("#set-abs-kind").value;
+    const site=kind.startsWith("site:")?kind.slice(5):null;
+    const notes=$("#set-abs-reason").value.trim();
+    const label=site?("Chantier — "+site):"Absence / Congé";
+    const nb=Math.max(1,Math.round((new Date(t)-new Date(f))/86400000)+1);
+    if(!confirm(`Bloquer du ${f} au ${t} (${nb} j) en « ${label} » ?\nLes interventions déjà posées sur ces jours seront supprimées.`)) return;
+    const res=await blockPeriod(f,t,site?{kind:"site",site,label,notes}:{kind:"off",label,notes});
+    closeSheet();
+    toast(res.n?`${res.n} jour(s) bloqué(s)${res.removed?` · ${res.removed} interv. retirée(s)`:""} ✔`
+                :"Aucun jour ouvré dans cette période",!res.n);
+    await load();
   };
   $("#set-exp-csv").onclick=()=>exportData("csv");
   $("#set-exp-json").onclick=()=>exportData("json");
@@ -1540,15 +1641,46 @@ async function openMyRequests(){
 
 /* --- Absences / congés (Responsable) ----------------------------------- */
 async function addAbsence(fromISO,toISO,reason){
-  let d=new Date(fromISO); const end=new Date(toISO||fromISO);
-  const jobs=[];
-  while(d<=end){
-    if(isWorkday(d)) jobs.push({date:iso(d),site:"—",title:"Absence / Congé",start:openHM(),end:closeHM(),
-      status:"planned",priority:false,source:"off",requested_by:"",notes:reason||""});
-    d=addDays(d,1);
+  return blockPeriod(fromISO,toISO,{kind:"off",label:"Absence / Congé",notes:reason||""});
+}
+
+/* Bloque une période entière (jours ouvrés) :
+   kind "off"  => absence/congé (exclu du placement auto)
+   kind "site" => chantier sur un site (journée occupée par du travail)  */
+async function blockPeriod(fromISO,toISO,opt){
+  opt=opt||{};
+  const end=new Date(toISO||fromISO);
+  let d=new Date(fromISO);
+  const days=[];
+  while(d<=end){ if(isWorkday(d)) days.push(iso(d)); d=addDays(d,1); }
+  if(!days.length) return {n:0,removed:0,failed:0};
+
+  // Retire ce qui occupe déjà ces journées (sinon l'anti-chevauchement refuse)
+  let removed=0;
+  for(const ds of days){
+    let existing=[];
+    try{ existing=await Store.range(ds,ds); }catch(e){}
+    for(const r of existing.filter(r=>r.status!=="cancelled"&&r.source!=="rush")){
+      try{ await Store.remove(r.id); removed++; }catch(e){ console.warn(e); }
+    }
   }
-  for(const j of jobs){ try{await Store.insert(j);}catch(e){console.warn(e);} }
-  return jobs.length;
+  let n=0, failed=0;
+  // Une journée bloquée occupe 07:00–16:00 : elle recouvre le rush → on le retire ces jours-là
+  if(rushInterval()){
+    if(!Array.isArray(SETTINGS.rushOff)) SETTINGS.rushOff=[];
+    let changed=false;
+    days.forEach(ds=>{ if(!SETTINGS.rushOff.includes(ds)){ SETTINGS.rushOff.push(ds); changed=true; } });
+    if(changed){ try{ await saveSettings(); }catch(e){ console.warn(e); } }
+  }
+  for(const ds of days){
+    const row = opt.kind==="site"
+      ? {date:ds,site:opt.site,title:opt.label||("Chantier — "+opt.site),start:openHM(),end:closeHM(),
+         status:"confirmed",priority:false,source:"adhoc",requested_by:"Responsable",notes:opt.notes||""}
+      : {date:ds,site:"—",title:opt.label||"Absence / Congé",start:openHM(),end:closeHM(),
+         status:"planned",priority:false,source:"off",requested_by:"",notes:opt.notes||""};
+    try{ await Store.insert(row); n++; }catch(e){ console.warn(e); failed++; }
+  }
+  return {n,removed,failed};
 }
 
 /* --- Exports : CSV / JSON / iCal ---------------------------------------- */
