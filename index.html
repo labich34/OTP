@@ -140,8 +140,8 @@ header.app{
 .chip.free{background:var(--free)} .chip.busy{background:var(--busy)}
 .chip.req{background:var(--req)} .chip.prio{background:var(--prio)}
 .chip.confirmed{background:#0f9d58}
-.chip.rush{background:repeating-linear-gradient(45deg,#cdbf9f,#cdbf9f 3px,#b9a986 3px,#b9a986 6px)}
-.chip.meal{background:repeating-linear-gradient(45deg,#d6cbb4,#d6cbb4 3px,#c3b697 3px,#c3b697 6px)}
+.chip.rush{background:repeating-linear-gradient(45deg,#ffe680,#ffe680 3px,#ffd43b 3px,#ffd43b 6px);border:1px solid #e6b800}
+.chip.meal{background:repeating-linear-gradient(45deg,#eceff3,#eceff3 3px,#d3dae1 3px,#d3dae1 6px);border:1px solid #c8d0d8}
 
 /* ---------- Grille semaine ---------- */
 .week{
@@ -188,10 +188,12 @@ header.app{
 .set-card{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;
   background:#fffdf9;box-shadow:var(--shadow-sm)}
 .set-site-del,.set-rec-del{flex:0 0 auto}
-.row.rush{background:repeating-linear-gradient(45deg,#efe9dd,#efe9dd 8px,#e7e0d0 8px,#e7e0d0 16px);border-color:var(--line-strong);color:var(--ink-soft)}
-.row.rush .marker{width:4px;border-radius:3px;background:var(--ink-soft);flex:none}
-.row.rush .title{color:var(--ink)}
-.row.rush.meal{background:repeating-linear-gradient(45deg,#f2ece0,#f2ece0 8px,#eae2d2 8px,#eae2d2 16px)}
+.row.rush{background:repeating-linear-gradient(45deg,#ffe680,#ffe680 8px,#ffd43b 8px,#ffd43b 16px);border-color:#e6b800;color:#6b4e00}
+.row.rush .marker{width:4px;border-radius:3px;background:#e6a700;flex:none}
+.row.rush .title{color:#6b4e00}
+.row.rush.meal{background:repeating-linear-gradient(45deg,#eceff3,#eceff3 8px,#e0e5ea 8px,#e0e5ea 16px);border-color:#c8d0d8;color:#5b6773}
+.row.rush.meal .marker{background:#8a97a4}
+.row.rush.meal .title{color:#44505c}
 .row.off{background:#eee9f3;border:1px solid #ddd3ea;color:#6a5c82}
 .row.off .marker{width:4px;border-radius:3px;background:#8f7fb0;flex:none}
 .row.off .title{color:#5b4d78}
@@ -952,7 +954,7 @@ function jobRow(j){
     r.innerHTML=`<div class="marker"></div>
       <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
       <div class="body"><div class="title">🚫 ${esc(j.title)}</div>
-      <div class="meta">Créneau non disponible</div></div>`;
+      <div class="meta">Créneau repas</div></div>`;
     return r;
   }
   const cls = j.priority?"prio" : j.status==="requested"?"req" : j.status==="confirmed"?"confirmed":"busy";
