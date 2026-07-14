@@ -416,8 +416,8 @@ header.app{
 const CONFIG = {
 
   /* --- 1. Partage temps réel (Supabase, gratuit). Laisse vide = mode démo local --- */
-  SUPABASE_URL: "",          // ex: "https://xxxx.supabase.co"
-  SUPABASE_ANON_KEY: "",     // clé "anon public" du projet
+  SUPABASE_URL: "https://xtiuwzktevutvynqpyfo.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable___3wIK5wRTj5nCaPAKqLlA_djjqQK7D",   // clé publique (navigateur) — OK en clair
 
   /* --- 2. Alertes sur ton téléphone --- */
   //  a) ntfy (le plus simple) : installe l'app "ntfy", abonne-toi au sujet ci-dessous.
@@ -644,13 +644,21 @@ async function materialize(ws,existing){
 }
 
 /* ------------------------------------------------------------- Notifications */
+/* En-tête HTTP : les emojis/accents doivent être encodés en RFC 2047,
+   sinon ntfy affiche des %F0%9F… dans le titre.                        */
+function encodeHeader(s){
+  s=String(s||"");
+  if(/^[\x20-\x7E]*$/.test(s)) return s;              // ASCII pur : tel quel
+  const b64=btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+  return "=?UTF-8?B?"+b64+"?=";
+}
 async function notify(title,body,opts){
   opts=opts||{};
   const tasks=[]; const appUrl=location.origin+location.pathname;
   const topic=opts.topic||CONFIG.NTFY_TOPIC;
   if(topic){
     tasks.push(fetch("https://ntfy.sh/"+topic,{method:"POST",
-      headers:{"Title":encodeURIComponent(title),"Tags":opts.tags||"wrench","Priority":opts.priority||"high","Click":appUrl},
+      headers:{"Title":encodeHeader(title),"Tags":opts.tags||"wrench","Priority":opts.priority||"high","Click":appUrl},
       body}).catch(()=>{}));
   }
   if(CONFIG.N8N_WEBHOOK){
