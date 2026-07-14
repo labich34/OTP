@@ -605,16 +605,23 @@ function makeStore(){
   };
 }
 
+/* Cette semaine doit-elle recevoir la tâche récurrente ? */
+function recRunsThisWeek(t,ws){
+  if(Number(t.freq)!==2) return true;                    // hebdomadaire
+  if(t.startDate){                                        // nouveau : date de départ
+    const s=mondayOf(new Date(t.startDate));
+    const diff=Math.round((ws-s)/(7*86400000));           // nb de semaines depuis le départ
+    return diff>=0 && diff%2===0;
+  }
+  const even=weekNum(ws)%2===0;                           // ancien réglage (parité) : compat
+  return (t.parity==="odd") ? !even : even;
+}
+
 /* Génère les interventions récurrentes manquantes pour la semaine affichée */
 async function materialize(ws,existing){
   const created=[];
   for(const t of SETTINGS.recurring){
-    // Fréquence : toutes les 2 semaines → ne matérialise que selon la parité du n° de semaine ISO
-    if(Number(t.freq)===2){
-      const even = weekNum(ws)%2===0;
-      const runThisWeek = (t.parity==="odd") ? !even : even;   // défaut = semaines paires
-      if(!runThisWeek) continue;
-    }
+    if(!recRunsThisWeek(t,ws)) continue;
     const date=iso(addDays(ws,t.weekday-1));
     const dup=existing.some(r=>r.source==="template"&&r.date===date&&r.start===t.start&&r.site===t.site&&r.title===t.title);
     if(!dup){
@@ -1342,7 +1349,7 @@ function openSettings(){
   const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name,dir:(SETTINGS.directors||{})[name]||""})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, weeklyHours:SETTINGS.weeklyHours, blockFrom:"", blockTo:"", calM:null, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
-  draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even"}; });
+  draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even",startDate:r.startDate||""}; });
   renderSettings(draft);
 }
 
@@ -1379,11 +1386,14 @@ function renderSettings(draft){
         <select class="set-rec-freq" data-i="${i}">
           <option value="1"${r.freq===1?" selected":""}>Chaque semaine</option>
           <option value="2"${r.freq===2?" selected":""}>Toutes les 2 semaines</option>
-        </select>
-        ${r.freq===2?`<select class="set-rec-parity" data-i="${i}">
-          <option value="even"${r.parity==="even"?" selected":""}>Semaines paires</option>
-          <option value="odd"${r.parity==="odd"?" selected":""}>Semaines impaires</option>
-        </select>`:``}</div>
+        </select></div>
+      ${r.freq===2?`<div class="set-row">
+        <label class="set-lbl">1ʳᵉ fois le</label>
+        <input class="set-rec-startdate" data-i="${i}" type="date" value="${esc(r.startDate||"")}">
+      </div>
+      <div class="set-note" style="margin:-2px 0 0">${r.startDate
+        ? `Puis toutes les 2 semaines à partir de cette date.`
+        : `<b>Choisis la date de la première intervention</b> — la tâche se répétera ensuite une semaine sur deux.`}</div>`:``}
     </div>`).join("");
 
   sheet.innerHTML=`
@@ -1397,7 +1407,7 @@ function renderSettings(draft){
     <div class="set-note">Où tu es posté chaque jour (regroupe le travail le matin).</div>
     ${baseHtml}
     <div class="set-h">🔁 Tâches récurrentes</div>
-    <div class="set-note">Choisis un modèle pour pré-remplir objet + durée, puis règle jour et fréquence. Astuce machine à glace : crée deux tâches — « grosse (3 h) » en semaines paires, « petite (2 h) » en semaines impaires. Semaine affichée : n°${weekNum(State.weekStart)} (${weekNum(State.weekStart)%2===0?"paire":"impaire"}).</div>
+    <div class="set-note">Choisis un modèle pour pré-remplir objet + durée, puis règle le jour et la fréquence. Pour une tâche <b>toutes les 2 semaines</b>, indique simplement la <b>date de la première intervention</b>. Astuce machine à glace : crée deux tâches — « grosse (3 h) » et « petite (2 h) » — avec des dates de départ décalées d'une semaine.</div>
     ${recHtml||`<div class="set-note">Aucune tâche pour l'instant.</div>`}
     <div class="set-row" style="gap:8px">
       <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
@@ -1488,11 +1498,19 @@ function renderSettings(draft){
   sheet.querySelectorAll(".set-rec-start").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].start=o.value;});
   sheet.querySelectorAll(".set-rec-end").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].end=o.value;});
   sheet.querySelectorAll(".set-rec-freq").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].freq=+o.value;renderSettings(draft);});
-  sheet.querySelectorAll(".set-rec-parity").forEach(o=>o.onchange=()=>{draft.recurring[+o.dataset.i].parity=o.value;});
+  sheet.querySelectorAll(".set-rec-startdate").forEach(o=>o.onchange=()=>{
+    const r=draft.recurring[+o.dataset.i];
+    r.startDate=o.value;
+    if(o.value){                       // aligne le jour de la semaine sur la date choisie
+      const wd=new Date(o.value).getDay();
+      if(wd>=1&&wd<=5) r.weekday=wd;
+    }
+    renderSettings(draft);
+  });
   sheet.querySelectorAll(".set-site-del").forEach(b=>b.onclick=()=>{draft.sites.splice(+b.dataset.i,1);renderSettings(draft);});
   sheet.querySelectorAll(".set-rec-del").forEach(b=>b.onclick=()=>{draft.recurring.splice(+b.dataset.i,1);renderSettings(draft);});
   $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:"",dir:""});renderSettings(draft);};
-  $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00",freq:1,parity:"even"});renderSettings(draft);};
+  $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00",freq:1,parity:"even",startDate:""});renderSettings(draft);};
   { const cr=$("#set-clear-rec"); if(cr) cr.onclick=()=>{ if(confirm("Effacer toutes les tâches récurrentes ? (à confirmer par Enregistrer)")){ draft.recurring=[]; renderSettings(draft); } }; }
   $("#set-cancel").onclick=closeSheet;
   $("#set-rush-on").onchange=e=>{draft.rush.enabled=e.target.checked;};
@@ -1574,7 +1592,7 @@ async function saveSettingsFromDraft(draft){
   const newBase={}; for(let w=1;w<=5;w++){ const id=draft.baseSite[w]; newBase[w]= id&&idToName[id] ? idToName[id] : ""; }
   const newRec=draft.recurring.filter(r=>r.siteId&&idToName[r.siteId]&&r.title.trim())
     .map(r=>({site:idToName[r.siteId],title:r.title.trim(),weekday:+r.weekday,start:r.start,end:r.end,
-      freq:r.freq===2?2:1,parity:r.freq===2?(r.parity==="odd"?"odd":"even"):"even"}));
+      freq:r.freq===2?2:1,parity:r.freq===2?(r.parity==="odd"?"odd":"even"):"even",startDate:r.freq===2?(r.startDate||""):""}));
 
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
   { const dm={}; draft.sites.forEach((s,i)=>{ const dn=(s.dir||"").trim(); if(dn) dm[names[i]]=dn; }); SETTINGS.directors=dm; }
@@ -1798,11 +1816,10 @@ async function cleanupRecurring(){
     const today=iso(new Date());
     const rows=await Store.range(today,iso(addDays(new Date(),120)));
     for(const r of rows.filter(r=>r.source==="template")){
-      const dd=new Date(r.date); const wd=(dd.getDay()+6)%7+1; const wn=weekNum(dd);
+      const dd=new Date(r.date); const wd=(dd.getDay()+6)%7+1;
       const match=SETTINGS.recurring.some(t=>{
         if(t.site!==r.site||t.title!==r.title||t.start!==r.start||Number(t.weekday)!==wd) return false;
-        if(Number(t.freq)===2){ const even=wn%2===0; if(((t.parity==="odd")?!even:even)===false) return false; }
-        return true;
+        return recRunsThisWeek(t,mondayOf(dd));
       });
       if(!match) await Store.remove(r.id);
     }
