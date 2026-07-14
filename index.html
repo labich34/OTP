@@ -141,6 +141,7 @@ header.app{
 .chip.req{background:var(--req)} .chip.prio{background:var(--prio)}
 .chip.confirmed{background:#0f9d58}
 .chip.rush{background:repeating-linear-gradient(45deg,#cdbf9f,#cdbf9f 3px,#b9a986 3px,#b9a986 6px)}
+.chip.meal{background:repeating-linear-gradient(45deg,#d6cbb4,#d6cbb4 3px,#c3b697 3px,#c3b697 6px)}
 
 /* ---------- Grille semaine ---------- */
 .week{
@@ -190,6 +191,7 @@ header.app{
 .row.rush{background:repeating-linear-gradient(45deg,#efe9dd,#efe9dd 8px,#e7e0d0 8px,#e7e0d0 16px);border-color:var(--line-strong);color:var(--ink-soft)}
 .row.rush .marker{width:4px;border-radius:3px;background:var(--ink-soft);flex:none}
 .row.rush .title{color:var(--ink)}
+.row.rush.meal{background:repeating-linear-gradient(45deg,#f2ece0,#f2ece0 8px,#eae2d2 8px,#eae2d2 16px)}
 .row.off{background:#eee9f3;border:1px solid #ddd3ea;color:#6a5c82}
 .row.off .marker{width:4px;border-radius:3px;background:#8f7fb0;flex:none}
 .row.off .title{color:#5b4d78}
@@ -388,6 +390,7 @@ header.app{
   <b><span class="chip busy"></span> Occupé</b>
   <b><span class="chip confirmed"></span> Confirmé</b>
   <b><span class="chip req"></span> En attente</b>
+  <b><span class="chip meal"></span> Indisponible</b>
   <b><span class="chip rush"></span> Rush midi</b>
 </div>
 
@@ -444,6 +447,9 @@ const CONFIG = {
   /* --- 5c. Rush du midi (coup de feu cuisine) : créneau bloqué chaque jour ---
      Réglable dans l'appli : Responsable > ⚙ Paramètres > Rush du midi.          */
   RUSH: { enabled: true, start: "11:45", end: "13:20", label: "Rush cuisine" },
+
+  /* --- 5c-bis. Pause repas : créneau indisponible chaque jour --- */
+  MEAL: { enabled: true, start: "11:15", end: "11:45", label: "Indisponible" },
 
   /* --- 5e. Durée de travail hebdomadaire de référence (Suisse : 42 h) --- */
   WEEKLY_HOURS: 42,
@@ -515,6 +521,7 @@ const SETTINGS = {
   recurring: CONFIG.RECURRING.map(x=>({...x})),
   baseSite: {...CONFIG.BASE_SITE},
   rush: {...CONFIG.RUSH},
+  meal: {...CONFIG.MEAL},
   weeklyHours: CONFIG.WEEKLY_HOURS,
   rushOff: [],           // jours (YYYY-MM-DD) où le rush est retiré (gros chantier)
   pinHash: ""            // vide => on utilise l'empreinte du fichier (CONFIG.ADMIN_PIN_HASH)
@@ -530,6 +537,7 @@ function applySettings(d){
   if(Array.isArray(d.recurring)) SETTINGS.recurring=d.recurring.map(x=>({...x}));
   if(d.baseSite&&typeof d.baseSite==="object") SETTINGS.baseSite={...d.baseSite};
   if(d.rush&&typeof d.rush==="object") SETTINGS.rush={...CONFIG.RUSH,...d.rush};
+  if(d.meal&&typeof d.meal==="object") SETTINGS.meal={...CONFIG.MEAL,...d.meal};
   if(typeof d.weeklyHours==="number"&&d.weeklyHours>0) SETTINGS.weeklyHours=d.weeklyHours;
   if(Array.isArray(d.rushOff)) SETTINGS.rushOff=d.rushOff.slice();
   if(typeof d.pinHash==="string") SETTINGS.pinHash=d.pinHash;
@@ -546,7 +554,7 @@ async function loadSettings(){
   }catch(e){ console.warn("loadSettings",e); }
 }
 async function saveSettings(){
-  const payload={sites:SETTINGS.sites,directors:SETTINGS.directors,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,weeklyHours:SETTINGS.weeklyHours,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
+  const payload={sites:SETTINGS.sites,directors:SETTINGS.directors,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,meal:SETTINGS.meal,weeklyHours:SETTINGS.weeklyHours,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
   if(SB){
     const {error}=await SB.from("app_settings").upsert({id:1,data:payload,updated_at:new Date().toISOString()});
     if(error) throw error;
@@ -698,6 +706,7 @@ function dayTimeline(dateStr){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
   const jobs=visibleRows().filter(r=>r.date===dateStr);
   const rr=rushRow(dateStr); if(rr) jobs.push(rr);
+  const mr=mealRow(dateStr); if(mr) jobs.push(mr);
   jobs.sort((a,b)=>toMin(a.start)-toMin(b.start));
   const items=[]; let cur=open;
   for(const j of jobs){
@@ -723,6 +732,8 @@ async function toggleRushDay(ds){
   catch(e){ console.warn(e); toast("Enregistrement impossible",true); }
 }
 function rushRow(dateStr){ const r=rushInterval(); return (r && !rushOffHas(dateStr))?{date:dateStr,site:"—",title:r.label,start:r.start,end:r.end,status:"planned",source:"rush",priority:false}:null; }
+function mealInterval(){ const m=SETTINGS.meal; return (m&&m.enabled)?{start:m.start,end:m.end,label:m.label||"Indisponible"}:null; }
+function mealRow(dateStr){ const m=mealInterval(); return m?{date:dateStr,site:"—",title:m.label,start:m.start,end:m.end,status:"planned",source:"meal",priority:false}:null; }
 function isWorkday(d){ const w=d.getDay(); return w>=1 && w<=CONFIG.HOURS.days; }
 function nextWorkday(dateStr){ let x=new Date(dateStr); do{ x=addDays(x,1); }while(!isWorkday(x)); return iso(x); }
 
@@ -730,6 +741,7 @@ function nextWorkday(dateStr){ let x=new Date(dateStr); do{ x=addDays(x,1); }whi
 function busyRowsOn(dateStr){
   const rows=State.rows.filter(r=>r.status!=="cancelled" && r.date===dateStr && r.source!=="free");
   const rr=rushRow(dateStr); if(rr) rows.push(rr);
+  const mr=mealRow(dateStr); if(mr) rows.push(mr);
   return rows.sort((a,b)=>toMin(a.start)-toMin(b.start));
 }
 function freeGapsAll(dateStr){
@@ -754,9 +766,11 @@ function findSlot(dateStr,dur,wStart,wEnd){
 // Placement auto : site du jour → matin ; autre site → après-midi ; journée pleine → jour suivant
 function autoPlace(dateStr,site,dur){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
-  const r=rushInterval();
-  const mEnd = r?toMin(r.start):NOON;   // fin du matin = début du rush (11:45)
-  const aStart = r?toMin(r.end):NOON;   // début aprem = fin du rush (13:20)
+  const r=rushInterval(), m=mealInterval();
+  // fin du matin = début du 1er blocage de midi (pause repas 11:15, sinon rush)
+  const mEnd = m?toMin(m.start) : (r?toMin(r.start):NOON);
+  // début après-midi = fin du dernier blocage de midi (rush 13:20, sinon pause)
+  const aStart = r?toMin(r.end) : (m?toMin(m.end):NOON);
   let d=dateStr;
   for(let k=0;k<7;k++){
     const base = baseSiteFor(d)===site;
@@ -931,6 +945,14 @@ function jobRow(j){
       <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
       <div class="body"><div class="title">🍽 ${esc(j.title)}</div>
       <div class="meta">Indisponible — coup de feu cuisine</div></div>`;
+    return r;
+  }
+  if(j.source==="meal"){
+    const r=el("div","row rush meal");
+    r.innerHTML=`<div class="marker"></div>
+      <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
+      <div class="body"><div class="title">🚫 ${esc(j.title)}</div>
+      <div class="meta">Créneau non disponible</div></div>`;
     return r;
   }
   const cls = j.priority?"prio" : j.status==="requested"?"req" : j.status==="confirmed"?"confirmed":"busy";
@@ -1346,7 +1368,7 @@ function openEdit(j){
 /* ============================================================= PARAMÈTRES */
 function openSettings(){
   let sid=0; const nid=()=>"s"+(sid++);
-  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name,dir:(SETTINGS.directors||{})[name]||""})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, weeklyHours:SETTINGS.weeklyHours, blockFrom:"", blockTo:"", calM:null, newPin:"" };
+  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name,dir:(SETTINGS.directors||{})[name]||""})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, meal:{...SETTINGS.meal}, weeklyHours:SETTINGS.weeklyHours, blockFrom:"", blockTo:"", calM:null, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
   draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even",startDate:r.startDate||""}; });
@@ -1424,6 +1446,18 @@ function renderSettings(draft){
     <div class="set-row">
       <label class="set-lbl">Fin</label><input id="set-rush-end" type="time" value="${draft.rush.end||"13:20"}">
     </div>
+    <div class="set-h">🚫 Créneau indisponible</div>
+    <div class="set-note">Créneau indisponible chaque jour. Aucune intervention ne peut y être placée.</div>
+    <div class="set-row">
+      <label class="set-lbl"><input type="checkbox" id="set-meal-on" ${draft.meal.enabled?"checked":""}> Actif</label>
+    </div>
+    <div class="set-row">
+      <label class="set-lbl">Début</label><input id="set-meal-start" type="time" value="${draft.meal.start||"11:15"}">
+    </div>
+    <div class="set-row">
+      <label class="set-lbl">Fin</label><input id="set-meal-end" type="time" value="${draft.meal.end||"11:45"}">
+    </div>
+
     <div class="set-row"><label class="set-lbl">Semaine (h)</label><input id="set-weekly" type="number" min="1" max="60" step="0.5" value="${draft.weeklyHours||42}"></div>
     <div class="set-note">Durée de travail hebdomadaire de référence (Suisse : 42 h) — sert au calcul de la charge.</div>
     <div class="set-h">📅 Bloquer une période</div>
@@ -1514,6 +1548,9 @@ function renderSettings(draft){
   { const cr=$("#set-clear-rec"); if(cr) cr.onclick=()=>{ if(confirm("Effacer toutes les tâches récurrentes ? (à confirmer par Enregistrer)")){ draft.recurring=[]; renderSettings(draft); } }; }
   $("#set-cancel").onclick=closeSheet;
   $("#set-rush-on").onchange=e=>{draft.rush.enabled=e.target.checked;};
+  $("#set-meal-on").onchange=e=>{draft.meal.enabled=e.target.checked;};
+  $("#set-meal-start").onchange=e=>{draft.meal.start=e.target.value;};
+  $("#set-meal-end").onchange=e=>{draft.meal.end=e.target.value;};
   $("#set-rush-start").onchange=e=>{draft.rush.start=e.target.value;};
   $("#set-rush-end").onchange=e=>{draft.rush.end=e.target.value;};
   { const w=$("#set-weekly"); if(w) w.onchange=e=>{ const v=parseFloat(e.target.value); if(v>0) draft.weeklyHours=v; }; }
@@ -1597,6 +1634,8 @@ async function saveSettingsFromDraft(draft){
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
   { const dm={}; draft.sites.forEach((s,i)=>{ const dn=(s.dir||"").trim(); if(dn) dm[names[i]]=dn; }); SETTINGS.directors=dm; }
   SETTINGS.rush={enabled:!!draft.rush.enabled,start:draft.rush.start,end:draft.rush.end,label:SETTINGS.rush.label||"Rush cuisine"};
+  if(draft.meal.enabled && toMin(draft.meal.end)<=toMin(draft.meal.start)){toast("Créneau indisponible : la fin doit être après le début",true);return;}
+  SETTINGS.meal={enabled:!!draft.meal.enabled,start:draft.meal.start,end:draft.meal.end,label:SETTINGS.meal.label||"Indisponible"};
   if(draft.weeklyHours>0) SETTINGS.weeklyHours=draft.weeklyHours;
   if(draft.newPin&&draft.newPin.trim()) SETTINGS.pinHash=await sha256Hex(draft.newPin.trim());
 
