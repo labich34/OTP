@@ -779,6 +779,27 @@ function findSlot(dateStr,dur,wStart,wEnd){
   }
   return null;
 }
+// Responsable : insère une intervention et DÉCALE (effet domino) ce qui gêne, au lieu de refuser
+async function adminPlaceCascade(row){
+  const Ns=toMin(row.start), Ne=toMin(row.end);
+  let ex=[]; try{ ex=await Store.range(row.date,row.date); }catch(e){}
+  const movable=ex.filter(r=>r.status!=="cancelled"&&r.status!=="refused"&&(r.source==="adhoc"||r.source==="template"))
+    .map(r=>({id:r.id,s:toMin(r.start),e:toMin(r.end)}))
+    .sort((a,b)=>a.s-b.s);
+  const moves=[]; let frontier=Ne;
+  for(const r of movable){
+    if(r.e<=Ns) continue;                 // entièrement avant la nouvelle : ne bouge pas
+    const dur=r.e-r.s;
+    const ns=Math.max(r.s,frontier);
+    if(ns!==r.s) moves.push({id:r.id,start:toHM(ns),end:toHM(ns+dur)});
+    frontier=ns+dur;
+  }
+  // Applique du plus tardif au plus tôt (évite tout chevauchement transitoire côté serveur)
+  moves.sort((a,b)=>toMin(b.start)-toMin(a.start));
+  for(const mv of moves){ try{ await Store.update(mv.id,{start:mv.start,end:mv.end}); }catch(e){ console.warn(e); } }
+  await Store.insert(row);
+  return {moved:moves.length, overflow:frontier>CONFIG.HOURS.end*60};
+}
 // Placement auto : heure souhaitée d'abord ; sinon site du jour → matin / autre → après-midi ; journée pleine → jour suivant
 function autoPlace(dateStr,site,dur,prefStart){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
@@ -1188,10 +1209,10 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
   const typeOpts=typeOptionsFor(siteDefault);
   const dirList=allDirs();
   const dirDefault=dirsOfSite(siteDefault)[0]||"";
-  const dirOpts=[`<option value="">— Choisir votre nom</option>`]
+  const dirOpts=(isAdmin?[`<option value="Fabien" selected>Fabien (moi)</option>`]:[`<option value="">— Choisir votre nom</option>`])
     .concat(dirList.map(n=>{
       const rl=dirRole(n);
-      return `<option value="${esc(n)}" ${n===dirDefault?"selected":""}>${esc(n)}${rl==="adjoint"?" (adjoint)":""}</option>`;
+      return `<option value="${esc(n)}" ${(!isAdmin&&n===dirDefault)?"selected":""}>${esc(n)}${rl==="adjoint"?" (adjoint)":""}</option>`;
     })).join("");
   sheet.innerHTML=`
     <h3>${urgentOnly?"🚨 Demande urgente":isAdmin?"Ajouter une intervention":"Proposer une intervention"}</h3>
@@ -1260,7 +1281,7 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     const site=$("#f-site").value, notes=$("#f-notes").value.trim();
     let by=$("#f-by").value.trim();
     if(!isAdmin && !by){toast("Choisis ton nom dans la liste",true);return;}
-    if(isAdmin && !by) by="Responsable";
+    if(isAdmin && !by) by="Fabien";
     const urgent=urgentOnly?true:$("#f-urgent").checked;
 
     const file=$("#f-photo").files&&$("#f-photo").files[0];
@@ -1298,10 +1319,19 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
         source:"adhoc",requested_by:by,notes};
       if(urgent) row.urgent=true;
       if(photo_url) row.photo_url=photo_url;
-      try{ await Store.insert(row); }
-      catch(e){ console.warn(e); toast(/exclusion|overlap|23P01/i.test((e&&e.message)||"")?"Créneau déjà occupé — déplace ou supprime l'existant, ou utilise une RGRV (journée entière)":writeErrMsg(e),true); return; }
+      if(isRgrv){
+        try{ await Store.insert(row); }
+        catch(e){ console.warn(e); toast(writeErrMsg(e),true); return; }
+        closeSheet();
+        toast(`RGRV posée — journée entière${removed?` · ${removed} interv. retirée(s)`:""} ✔`);
+        await load(); return;
+      }
+      // Non-RGRV : on pose à l'heure choisie en décalant ce qui gêne (jamais de refus)
+      let res;
+      try{ res=await adminPlaceCascade(row); }
+      catch(e){ console.warn(e); toast(writeErrMsg(e),true); return; }
       closeSheet();
-      toast(isRgrv?`RGRV posée — journée entière${removed?` · ${removed} interv. retirée(s)`:""} ✔`:"Intervention ajoutée (prioritaire) ✔");
+      toast(res.moved?`Intervention posée · ${res.moved} décalée(s) ✔${res.overflow?" (dépasse 16:00)":""}`:"Intervention ajoutée ✔");
       await load();
       return;
     }
