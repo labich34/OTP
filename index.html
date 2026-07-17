@@ -779,14 +779,19 @@ function findSlot(dateStr,dur,wStart,wEnd){
   }
   return null;
 }
-// Placement auto : site du jour → matin ; autre site → après-midi ; journée pleine → jour suivant
-function autoPlace(dateStr,site,dur){
+// Placement auto : heure souhaitée d'abord ; sinon site du jour → matin / autre → après-midi ; journée pleine → jour suivant
+function autoPlace(dateStr,site,dur,prefStart){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
   const r=rushInterval(), m=mealInterval();
-  // fin du matin = début du 1er blocage de midi (pause repas 11:15, sinon rush)
   const mEnd = m?toMin(m.start) : (r?toMin(r.start):NOON);
-  // début après-midi = fin du dernier blocage de midi (rush 13:20, sinon pause)
   const aStart = r?toMin(r.end) : (m?toMin(m.end):NOON);
+  // Heure souhaitée : on tente d'abord ce créneau précis le jour demandé
+  if(prefStart){
+    const ps=toMin(prefStart);
+    for(const g of freeGapsAll(dateStr)){
+      if(ps>=g.start && ps+dur<=g.end) return {date:dateStr,start:toHM(ps),base:baseSiteFor(dateStr)===site,pref:true,sameDay:true};
+    }
+  }
   let d=dateStr;
   for(let k=0;k<7;k++){
     const base = baseSiteFor(d)===site;
@@ -1202,7 +1207,10 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     <div class="field" id="f-detail-wrap" style="display:none"><label id="f-detail-lbl">Précisez</label><input id="f-detail" placeholder=""></div>
     <div class="field"><label>Objet de l'intervention</label>
       <input id="f-title" placeholder="Ex : néon HS couloir, fuite sous évier…"></div>
-    <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
+    <div class="row2">
+      <div class="field"><label>Heure de début</label><input id="f-start" type="time" value="${esc(startDefault||"08:00")}"></div>
+      <div class="field"><label>Durée estimée</label><select id="f-dur">${durOpts}</select></div>
+    </div>
     ${urgentOnly
       ? `<label class="urg-box"><input type="checkbox" id="f-urgent" checked disabled> <span>🚨 Urgent — alerte immédiate (obligatoire ici)</span></label>`
       : `<label class="urg-box"><input type="checkbox" id="f-urgent"> <span>🚨 Urgent — alerte immédiate</span></label>`}
@@ -1271,7 +1279,7 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     // Mode Responsable : placement prioritaire, direct (pas de placement automatique)
     if(isAdmin){
       const isRgrv = /RGRV/i.test(tp.label||"") || /RGRV/i.test(title);
-      let start=startDefault, end=toHM(toMin(startDefault)+dur), removed=0;
+      let start=($("#f-start").value||startDefault), end=toHM(toMin(start)+dur), removed=0;
       let photo_url="";
       if(file){ toast("Envoi de la photo…"); photo_url=await uploadPhoto(file); }
       if(isRgrv){
@@ -1298,7 +1306,7 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
       return;
     }
 
-    const p=autoPlace(dateStr,site,dur);
+    const p=autoPlace(dateStr,site,dur,$("#f-start").value||null);
     if(!p){ toast("Aucun créneau libre dans les prochains jours",true); return; }
     const end=toHM(toMin(p.start)+dur);
     if(!p.sameDay){
