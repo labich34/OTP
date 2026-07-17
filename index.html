@@ -948,14 +948,7 @@ function freeRow(dateStr,it){
   r.innerHTML=`<div class="time mono">${toHM(it.start)}<br>${toHM(it.end)}</div>
     <div class="body"><div class="title">＋ Libre — proposer un créneau</div>
     <div class="meta">${(it.end-it.start)} min disponibles${morningReco?` · <span class="reco">★ matin recommandé (${esc(bSite)})</span>`:``}</div></div>`;
-  r.onclick=()=>{
-    if(State.role==="admin"){
-      openEdit({date:dateStr,site:baseSiteFor(dateStr)||SETTINGS.sites[0],title:"",
-        start:toHM(it.start),end:toHM(Math.min(it.end,it.start+120)),notes:"",status:"confirmed",priority:false,source:"adhoc"});
-    } else {
-      openRequest(dateStr,toHM(it.start),toHM(it.end));
-    }
-  };
+  r.onclick=()=>openRequest(dateStr,toHM(it.start),toHM(it.end));
   return r;
 }
 
@@ -1149,6 +1142,14 @@ const FAULT_PRESETS=[
   {label:"Problème sur un équipement",dur:60,detail:"Quel équipement ?",prefix:"Équipement : "},
   {label:"Autres",dur:60,detail:"Précisez l'objet",prefix:""},
 ];
+// La crèche et le siège ne font pas de RGRV
+function siteDoesRGRV(site){ return !/cr[eè]che|si[eè]ge/i.test(site||""); }
+function typeOptionsFor(site){
+  return FAULT_PRESETS.map((t,i)=>{
+    if(/RGRV/i.test(t.label) && !siteDoesRGRV(site)) return "";
+    return `<option value="${i}">${esc(t.label)}</option>`;
+  }).join("");
+}
 async function uploadPhoto(file){
   if(!SB||!file) return "";
   try{
@@ -1163,12 +1164,13 @@ async function uploadPhoto(file){
 function openRequest(dateStr,startDefault,rangeEnd,opts){
   opts=opts||{};
   const urgentOnly=!!opts.urgentOnly;
+  const isAdmin = State.role==="admin";
   const dt=new Date(dateStr);
   const fmtDur=m=>{ const h=Math.floor(m/60), r=m%60; return h?(h+"h"+(r?String(r).padStart(2,"0"):"")):(r+"min"); };
   const durOpts=[30,60,90,120,150,180,210,240,300,360,420,480,540].map(m=>
     `<option value="${m}">${fmtDur(m)}</option>`).join("");
-  const typeOpts=FAULT_PRESETS.map((t,i)=>`<option value="${i}">${esc(t.label)}</option>`).join("");
   const siteDefault = State.site!=="__all__"?State.site:SETTINGS.sites[0];
+  const typeOpts=typeOptionsFor(siteDefault);
   const dirList=allDirs();
   const dirDefault=dirsOfSite(siteDefault)[0]||"";
   const dirOpts=[`<option value="">— Choisir votre nom</option>`]
@@ -1177,10 +1179,12 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
       return `<option value="${esc(n)}" ${n===dirDefault?"selected":""}>${esc(n)}${rl==="adjoint"?" (adjoint)":""}</option>`;
     })).join("");
   sheet.innerHTML=`
-    <h3>${urgentOnly?"🚨 Demande urgente":"Proposer une intervention"}</h3>
+    <h3>${urgentOnly?"🚨 Demande urgente":isAdmin?"Ajouter une intervention":"Proposer une intervention"}</h3>
     <div class="sub">${DAYS_FR[dt.getDay()]} ${fmtDay(dt)}${urgentOnly?" · journée pleine ou bloquée":` · créneau libre ${startDefault}–${rangeEnd}`}</div>
     ${urgentOnly
       ? `<div class="info-auto" style="background:#fdeef0;border-color:#f3c9cf;color:#a11">🚨 Cette journée est <b>pleine ou bloquée</b> (chantier / congé). Seule une <b>vraie urgence</b> est acceptée ici : elle sera signalée hors planning et Thibaut recevra une alerte immédiate pour arbitrer.</div>`
+      : isAdmin
+      ? `<div class="info-auto">✅ Mode Responsable : l'intervention est posée <b>directement à l'heure choisie</b>, confirmée (prioritaire). Type <b>RGRV</b> = journée entière qui <b>efface les autres interventions du jour</b>.</div>`
       : `<div class="info-auto">ℹ️ Une intervention n'est placée le matin que si c'est le site du jour. Sinon elle va l'après-midi ; et si la journée est pleine, elle passe au lendemain.</div>`}
     <div class="field"><label>Site concerné</label>
       <select id="f-site">${SETTINGS.sites.map(s=>`<option ${s===siteDefault?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
@@ -1205,9 +1209,13 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
   overlay.classList.add("open");
   $("#f-cancel").onclick=closeSheet;
   $("#f-site").onchange=e=>{
-    const n=dirsOfSite(e.target.value)[0];
+    const site=e.target.value;
+    const cur=$("#f-type").value;
+    $("#f-type").innerHTML=typeOptionsFor(site);
+    if([...$("#f-type").options].some(o=>o.value===cur)) $("#f-type").value=cur; else $("#f-type").value="0";
+    const n=dirsOfSite(site)[0];
     const sel=$("#f-by");
-    if(n && [...sel.options].some(o=>o.value===n)) sel.value=n;
+    if(n && sel && [...sel.options].some(o=>o.value===n)) sel.value=n;
   };
   $("#f-type").onchange=e=>{
     const t=FAULT_PRESETS[+e.target.value]||{};
@@ -1231,8 +1239,10 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     if(!title){toast("Indique l'objet de l'intervention",true);return;}
     if(State.role!=="admin" && !rateOk()){toast("Trop de demandes en peu de temps — patiente une minute",true);return;}
     const dur=parseInt($("#f-dur").value,10);
-    const site=$("#f-site").value, notes=$("#f-notes").value.trim(), by=$("#f-by").value.trim();
-    if(!by){toast("Choisis ton nom dans la liste",true);return;}
+    const site=$("#f-site").value, notes=$("#f-notes").value.trim();
+    let by=$("#f-by").value.trim();
+    if(!isAdmin && !by){toast("Choisis ton nom dans la liste",true);return;}
+    if(isAdmin && !by) by="Responsable";
     const urgent=urgentOnly?true:$("#f-urgent").checked;
 
     const file=$("#f-photo").files&&$("#f-photo").files[0];
@@ -1245,6 +1255,36 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
       if(file){ toast("Envoi de la photo…"); photo_url=await uploadPhoto(file); }
       await submitRequest({date:dateStr,site,title,start:"00:00",end:"00:01",notes,by,urgent:true,photo_url,
         status:"requested",overflow:true,_urgentOnly:true});
+      return;
+    }
+
+    // Mode Responsable : placement prioritaire, direct (pas de placement automatique)
+    if(isAdmin){
+      const isRgrv = /RGRV/i.test(tp.label||"") || /RGRV/i.test(title);
+      let start=startDefault, end=toHM(toMin(startDefault)+dur), removed=0;
+      let photo_url="";
+      if(file){ toast("Envoi de la photo…"); photo_url=await uploadPhoto(file); }
+      if(isRgrv){
+        if(!siteDoesRGRV(site)){ toast("Ce site ne fait pas de RGRV",true); return; }
+        start=openHM(); end=closeHM();
+        if(!confirm(`RGRV sur ${site} le ${DAYS_FR[dt.getDay()]} ${fmtDay(dt)} :\njournée entière (07:00–16:00).\n\nToutes les autres interventions de ce jour seront supprimées. Continuer ?`)) return;
+        let existing=[];
+        try{ existing=await Store.range(dateStr,dateStr); }catch(e){}
+        for(const rr of existing.filter(r=>r.status!=="cancelled"&&r.source!=="rush"&&r.source!=="meal")){
+          try{ await Store.remove(rr.id); removed++; }catch(e){ console.warn(e); }
+        }
+        if(rushInterval()){ if(!Array.isArray(SETTINGS.rushOff))SETTINGS.rushOff=[];
+          if(!SETTINGS.rushOff.includes(dateStr)){ SETTINGS.rushOff.push(dateStr); try{ await saveSettings(); }catch(e){} } }
+      }
+      const row={date:dateStr,site,title,start,end,status:"confirmed",priority:false,
+        source:"adhoc",requested_by:by,notes};
+      if(urgent) row.urgent=true;
+      if(photo_url) row.photo_url=photo_url;
+      try{ await Store.insert(row); }
+      catch(e){ console.warn(e); toast(/exclusion|overlap|23P01/i.test((e&&e.message)||"")?"Créneau déjà occupé — déplace ou supprime l'existant, ou utilise une RGRV (journée entière)":writeErrMsg(e),true); return; }
+      closeSheet();
+      toast(isRgrv?`RGRV posée — journée entière${removed?` · ${removed} interv. retirée(s)`:""} ✔`:"Intervention ajoutée (prioritaire) ✔");
+      await load();
       return;
     }
 
