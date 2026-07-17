@@ -524,6 +524,7 @@ let SB=null;
 const SETTINGS = {
   sites: CONFIG.SITES.slice(),
   directors: {...(CONFIG.DIRECTORS||{})},
+  faultTypes: [],           // types d'intervention perso ajoutés par le Responsable
   recurring: CONFIG.RECURRING.map(x=>({...x})),
   baseSite: {...CONFIG.BASE_SITE},
   rush: {...CONFIG.RUSH},
@@ -540,6 +541,7 @@ function applySettings(d){
   if(!d||typeof d!=="object") return;
   if(Array.isArray(d.sites)&&d.sites.length) SETTINGS.sites=d.sites.slice();
   if(d.directors&&typeof d.directors==="object") SETTINGS.directors={...d.directors};
+  if(Array.isArray(d.faultTypes)) SETTINGS.faultTypes=d.faultTypes.slice();
   if(Array.isArray(d.recurring)) SETTINGS.recurring=d.recurring.map(x=>({...x}));
   if(d.baseSite&&typeof d.baseSite==="object") SETTINGS.baseSite={...d.baseSite};
   if(d.rush&&typeof d.rush==="object") SETTINGS.rush={...CONFIG.RUSH,...d.rush};
@@ -560,7 +562,7 @@ async function loadSettings(){
   }catch(e){ console.warn("loadSettings",e); }
 }
 async function saveSettings(){
-  const payload={sites:SETTINGS.sites,directors:SETTINGS.directors,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,meal:SETTINGS.meal,weeklyHours:SETTINGS.weeklyHours,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
+  const payload={sites:SETTINGS.sites,directors:SETTINGS.directors,faultTypes:SETTINGS.faultTypes,recurring:SETTINGS.recurring,baseSite:SETTINGS.baseSite,rush:SETTINGS.rush,meal:SETTINGS.meal,weeklyHours:SETTINGS.weeklyHours,rushOff:SETTINGS.rushOff,pinHash:SETTINGS.pinHash};
   if(SB){
     const {error}=await SB.from("app_settings").upsert({id:1,data:payload,updated_at:new Date().toISOString()});
     if(error) throw error;
@@ -1131,21 +1133,29 @@ function closeSheet(){overlay.classList.remove("open");sheet.innerHTML="";}
 overlay.onclick=e=>{if(e.target===overlay)closeSheet();};
 
 /* --- Demande directeur (clic sur créneau libre) --- */
-const FAULT_PRESETS=[
+const FAULT_BUILTIN=[
   {label:"— Type d'intervention",dur:0},
   {label:"Électricité générale",dur:60},
   {label:"Éclairage / luminaire",dur:30},
   {label:"Plomberie",dur:60},
   {label:"Canalisation bouchée",dur:60},
   {label:"Nettoyage Karcher",dur:120},
+  {label:"Peinture",dur:120},
   {label:"RGRV — contrôle propreté & qualité (journée)",dur:540},
   {label:"Problème sur un équipement",dur:60,detail:"Quel équipement ?",prefix:"Équipement : "},
   {label:"Autres",dur:60,detail:"Précisez l'objet",prefix:""},
 ];
+// Liste effective = types intégrés + types perso (⚙ Paramètres), perso insérés avant "équipement/autres"
+function faultPresets(){
+  const custom=(SETTINGS.faultTypes||[]).filter(t=>t&&t.label).map(t=>({label:t.label,dur:t.dur||60}));
+  const head=FAULT_BUILTIN.slice(0,FAULT_BUILTIN.length-2);
+  const tail=FAULT_BUILTIN.slice(FAULT_BUILTIN.length-2);
+  return [...head,...custom,...tail];
+}
 // La crèche et le siège ne font pas de RGRV
 function siteDoesRGRV(site){ return !/cr[eè]che|si[eè]ge/i.test(site||""); }
 function typeOptionsFor(site){
-  return FAULT_PRESETS.map((t,i)=>{
+  return faultPresets().map((t,i)=>{
     if(/RGRV/i.test(t.label) && !siteDoesRGRV(site)) return "";
     return `<option value="${i}">${esc(t.label)}</option>`;
   }).join("");
@@ -1218,7 +1228,7 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     if(n && sel && [...sel.options].some(o=>o.value===n)) sel.value=n;
   };
   $("#f-type").onchange=e=>{
-    const t=FAULT_PRESETS[+e.target.value]||{};
+    const t=faultPresets()[+e.target.value]||{};
     if(t.dur) $("#f-dur").value=String(t.dur);
     const wrap=$("#f-detail-wrap");
     if(t.detail){
@@ -1233,7 +1243,7 @@ function openRequest(dateStr,startDefault,rangeEnd,opts){
     }
   };
   $("#f-send").onclick=async()=>{
-    const ti=+$("#f-type").value, tp=FAULT_PRESETS[ti]||{};
+    const ti=+$("#f-type").value, tp=faultPresets()[ti]||{};
     let title=$("#f-title").value.trim();
     if(tp.detail){ const det=($("#f-detail").value||"").trim(); if(det) title=(tp.prefix||"")+det; }
     if(!title){toast("Indique l'objet de l'intervention",true);return;}
@@ -1461,7 +1471,7 @@ function openEdit(j){
 /* ============================================================= PARAMÈTRES */
 function openSettings(){
   let sid=0; const nid=()=>"s"+(sid++);
-  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name,dir:(SETTINGS.directors||{})[name]||""})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, meal:{...SETTINGS.meal}, weeklyHours:SETTINGS.weeklyHours, blockFrom:"", blockTo:"", calM:null, newPin:"" };
+  const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name,dir:(SETTINGS.directors||{})[name]||""})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, meal:{...SETTINGS.meal}, weeklyHours:SETTINGS.weeklyHours, faultTypes:(SETTINGS.faultTypes||[]).map(t=>({label:t.label||"",dur:t.dur||60})), blockFrom:"", blockTo:"", calM:null, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
   draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even",startDate:r.startDate||""}; });
@@ -1518,6 +1528,18 @@ function renderSettings(draft){
     <div class="set-note">Un site peut avoir plusieurs directeurs : sépare les noms par une virgule. Le <b>premier est le principal</b>, les suivants sont adjoints / remplaçants (ex. « Amandine, Kevin »).</div>
     ${sitesHtml}
     <button class="btn small" id="set-add-site">+ Ajouter un site</button>
+
+    <div class="set-h">🧰 Types d'intervention</div>
+    <div class="set-note">Ceux proposés aux directeurs et à toi dans le formulaire. Ajoute les tiens ici. (RGRV est masqué pour la crèche et le siège.)</div>
+    ${draft.faultTypes.map((t,i)=>`
+      <div class="set-row">
+        <input class="set-ft-label" data-i="${i}" value="${esc(t.label)}" placeholder="Nom du type (ex. Serrurerie)">
+        <input class="set-ft-dur" data-i="${i}" type="number" min="15" max="540" step="15" value="${t.dur||60}" title="Durée par défaut (min)" style="max-width:90px">
+        <span class="set-lbl" style="min-width:auto">min</span>
+        <button class="btn small danger set-ft-del" data-i="${i}">✕</button>
+      </div>`).join("")}
+    <button class="btn small" id="set-add-ft">+ Ajouter un type</button>
+
     <div class="set-h">📍 Site du jour</div>
     <div class="set-note">Où tu es posté chaque jour (regroupe le travail le matin).</div>
     ${baseHtml}
@@ -1638,6 +1660,10 @@ function renderSettings(draft){
   sheet.querySelectorAll(".set-site-del").forEach(b=>b.onclick=()=>{draft.sites.splice(+b.dataset.i,1);renderSettings(draft);});
   sheet.querySelectorAll(".set-rec-del").forEach(b=>b.onclick=()=>{draft.recurring.splice(+b.dataset.i,1);renderSettings(draft);});
   $("#set-add-site").onclick=()=>{draft.sites.push({id:"s"+Date.now(),orig:null,name:"",dir:""});renderSettings(draft);};
+  sheet.querySelectorAll(".set-ft-label").forEach(o=>o.oninput=()=>{draft.faultTypes[+o.dataset.i].label=o.value;});
+  sheet.querySelectorAll(".set-ft-dur").forEach(o=>o.onchange=()=>{const v=parseInt(o.value,10);draft.faultTypes[+o.dataset.i].dur=v>0?v:60;});
+  sheet.querySelectorAll(".set-ft-del").forEach(o=>o.onclick=()=>{draft.faultTypes.splice(+o.dataset.i,1);renderSettings(draft);});
+  { const b=$("#set-add-ft"); if(b) b.onclick=()=>{draft.faultTypes.push({label:"",dur:60});renderSettings(draft);}; }
   $("#set-add-rec").onclick=()=>{const f=draft.sites[0];draft.recurring.push({siteId:f?f.id:"",title:"",weekday:1,start:"08:00",end:"09:00",freq:1,parity:"even",startDate:""});renderSettings(draft);};
   { const cr=$("#set-clear-rec"); if(cr) cr.onclick=()=>{ if(confirm("Effacer toutes les tâches récurrentes ? (à confirmer par Enregistrer)")){ draft.recurring=[]; renderSettings(draft); } }; }
   $("#set-cancel").onclick=closeSheet;
@@ -1728,6 +1754,7 @@ async function saveSettingsFromDraft(draft){
 
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
   { const dm={}; draft.sites.forEach((s,i)=>{ const dn=(s.dir||"").trim(); if(dn) dm[names[i]]=dn; }); SETTINGS.directors=dm; }
+  SETTINGS.faultTypes=(draft.faultTypes||[]).map(t=>({label:(t.label||"").trim(),dur:t.dur||60})).filter(t=>t.label);
   SETTINGS.rush={enabled:!!draft.rush.enabled,start:draft.rush.start,end:draft.rush.end,label:SETTINGS.rush.label||"Rush cuisine"};
   if(draft.meal.enabled && toMin(draft.meal.end)<=toMin(draft.meal.start)){toast("Créneau indisponible : la fin doit être après le début",true);return;}
   SETTINGS.meal={enabled:!!draft.meal.enabled,start:draft.meal.start,end:draft.meal.end,label:SETTINGS.meal.label||"Indisponible"};
