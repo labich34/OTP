@@ -948,7 +948,14 @@ function freeRow(dateStr,it){
   r.innerHTML=`<div class="time mono">${toHM(it.start)}<br>${toHM(it.end)}</div>
     <div class="body"><div class="title">＋ Libre — proposer un créneau</div>
     <div class="meta">${(it.end-it.start)} min disponibles${morningReco?` · <span class="reco">★ matin recommandé (${esc(bSite)})</span>`:``}</div></div>`;
-  r.onclick=()=>openRequest(dateStr,toHM(it.start),toHM(it.end));
+  r.onclick=()=>{
+    if(State.role==="admin"){
+      openEdit({date:dateStr,site:baseSiteFor(dateStr)||SETTINGS.sites[0],title:"",
+        start:toHM(it.start),end:toHM(Math.min(it.end,it.start+120)),notes:"",status:"confirmed",priority:false,source:"adhoc"});
+    } else {
+      openRequest(dateStr,toHM(it.start),toHM(it.end));
+    }
+  };
   return r;
 }
 
@@ -1362,6 +1369,9 @@ function openEdit(j){
       <div class="field"><label>Début</label><input id="e-start" type="time" value="${j.start}"></div>
       <div class="field"><label>Fin</label><input id="e-end" type="time" value="${j.end}"></div>
     </div>
+    ${isNew?`<label class="urg-box" style="background:var(--confirmed-bg);border-color:#93c5fd;color:#1e3a8a">
+      <input type="checkbox" id="e-multi"> <span>📅 Répéter chaque jour ouvré jusqu'à une date (ex. RGRV sur plusieurs jours)</span></label>
+    <div class="field" id="e-until-wrap" style="display:none"><label>Jusqu'au (inclus)</label><input id="e-until" type="date" value="${j.date}"></div>`:``}
     <div class="field"><label>Notes</label><textarea id="e-notes">${esc(j.notes||"")}</textarea></div>
     <div class="sheet-actions">
       <button class="btn" id="e-cancel">Annuler</button>
@@ -1369,12 +1379,41 @@ function openEdit(j){
     </div>`;
   overlay.classList.add("open");
   $("#e-cancel").onclick=closeSheet;
+  if(isNew){
+    $("#e-multi").onchange=e=>{ $("#e-until-wrap").style.display=e.target.checked?"":"none"; };
+  }
   $("#e-save").onclick=async()=>{
-    const patch={site:$("#e-site").value,title:$("#e-title").value.trim(),date:$("#e-date").value,
-      start:$("#e-start").value,end:$("#e-end").value,status:$("#e-status").value,notes:$("#e-notes").value.trim()};
-    if(!patch.title){toast("Objet requis",true);return;}
-    if(isNew){patch.priority=false;patch.source="adhoc";patch.requested_by="Technicien";await Store.insert(patch);}
-    else{await Store.update(j.id,patch);}
+    const site=$("#e-site").value, title=$("#e-title").value.trim(), start=$("#e-start").value, end=$("#e-end").value,
+      status=$("#e-status").value, notes=$("#e-notes").value.trim();
+    if(!title){toast("Objet requis",true);return;}
+    if(toMin(end)<=toMin(start)){toast("L'heure de fin doit être après le début",true);return;}
+
+    const multi=isNew && $("#e-multi") && $("#e-multi").checked;
+    if(multi){
+      const until=$("#e-until").value;
+      if(!until){toast("Choisis la date de fin de la période",true);return;}
+      let d=new Date($("#e-date").value); const end2=new Date(until);
+      if(end2<d){toast("La date de fin doit être après la date de début",true);return;}
+      let n=0, failed=0;
+      while(d<=end2){
+        if(isWorkday(d)){
+          try{ await Store.insert({date:iso(d),site,title,start,end,status,notes,priority:false,source:"adhoc",requested_by:"Technicien"}); n++; }
+          catch(e){ console.warn(e); failed++; }
+        }
+        d=addDays(d,1);
+      }
+      closeSheet();
+      toast(n?`${n} jour(s) créé(s)${failed?` · ${failed} refusé(s) (conflit)`:""} ✔`:"Aucun jour ouvré dans cette période",!n);
+      await load();
+      return;
+    }
+
+    const patch={site,title,date:$("#e-date").value,start,end,status,notes};
+    if(isNew){patch.priority=false;patch.source="adhoc";patch.requested_by="Technicien";
+      try{ await Store.insert(patch); }catch(e){ console.warn(e); toast(/exclusion|overlap|23P01/i.test((e&&e.message)||"")?"Créneau déjà occupé à cet horaire":writeErrMsg(e),true); return; }
+    } else {
+      try{ await Store.update(j.id,patch); }catch(e){ console.warn(e); toast(/exclusion|overlap|23P01/i.test((e&&e.message)||"")?"Créneau déjà occupé à cet horaire":writeErrMsg(e),true); return; }
+    }
     closeSheet();toast("Enregistré ✔");await load();
   };
 }
@@ -1488,6 +1527,7 @@ function renderSettings(draft){
     <div class="set-row"><label class="set-lbl">Motif</label>
       <select id="set-abs-kind">
         <option value="off">Absence / congé</option>
+        ${draft.sites.map(s=>`<option value="rgrv:${esc(s.name)}">RGRV — ${esc(s.name||"(sans nom)")}</option>`).join("")}
         ${draft.sites.map(s=>`<option value="site:${esc(s.name)}">Chantier — ${esc(s.name||"(sans nom)")}</option>`).join("")}
       </select></div>
     <div class="set-row"><input id="set-abs-reason" placeholder="Précision (facultatif)"></div>
@@ -1609,9 +1649,10 @@ function renderSettings(draft){
     const f=$("#set-abs-from").value, t=$("#set-abs-to").value||f;
     if(!f){toast("Choisis une date (ou clique dans le calendrier)",true);return;}
     const kind=$("#set-abs-kind").value;
-    const site=kind.startsWith("site:")?kind.slice(5):null;
+    const isRgrv=kind.startsWith("rgrv:");
+    const site = isRgrv?kind.slice(5) : kind.startsWith("site:")?kind.slice(5) : null;
     const notes=$("#set-abs-reason").value.trim();
-    const label=site?("Chantier — "+site):"Absence / Congé";
+    const label=isRgrv?("RGRV — contrôle propreté & qualité — "+site) : site?("Chantier — "+site):"Absence / Congé";
     const nb=Math.max(1,Math.round((new Date(t)-new Date(f))/86400000)+1);
     if(!confirm(`Bloquer du ${f} au ${t} (${nb} j) en « ${label} » ?\nLes interventions déjà posées sur ces jours seront supprimées.`)) return;
     const res=await blockPeriod(f,t,site?{kind:"site",site,label,notes}:{kind:"off",label,notes});
