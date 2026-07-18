@@ -1,6 +1,10 @@
 /* Planning Technicien — Service Worker (PWA / offline) */
-const CACHE = "planning-v1";
-const SHELL = ["./", "./index.html", "./manifest.json", "./icon.svg"];
+const CACHE = "planning-v2";
+const SHELL = [
+  "./", "./index.html", "./manifest.json",
+  "./icon-512.png", "./icon-192.png", "./icon-180.png",
+  "./icon-152.png", "./icon-120.png"
+];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(()=>{}));
@@ -13,8 +17,8 @@ self.addEventListener("activate", e => {
 });
 self.addEventListener("fetch", e => {
   const req = e.request;
-  if (req.method !== "GET") return;                          // écritures : toujours réseau
-  if (/supabase|ntfy|\/rest\/|\/auth\/|api\./.test(req.url)) return; // données : jamais en cache
+  if (req.method !== "GET") return;
+  if (/supabase|ntfy|\/rest\/|\/auth\/|api\./.test(req.url)) return;
   e.respondWith(
     fetch(req).then(res => {
       const copy = res.clone();
