@@ -681,7 +681,8 @@ const DIRECTOR_FALLBACK = ["Vlad","Kylian","Amandine","Kevin","Jeremy"];
 function dirsOfSite(site){ return String((SETTINGS.directors||{})[site]||"").split(",").map(x=>x.trim()).filter(Boolean); }
 function allDirs(){
   const a=[];
-  const has=n=>a.some(x=>x.toLowerCase()===n.toLowerCase());
+  const norm=n=>n.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const has=n=>a.some(x=>norm(x)===norm(n));
   SETTINGS.sites.forEach(s=>dirsOfSite(s).forEach(n=>{ if(!has(n)) a.push(n); }));
   DIRECTOR_FALLBACK.forEach(n=>{ if(!has(n)) a.push(n); });
   return a;
