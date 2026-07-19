@@ -172,6 +172,7 @@ header.app{
 .slots{padding:8px}
 .day-site{margin:2px 15px 8px;padding:7px 11px;border-radius:9px;font-size:12px;font-weight:600;
   background:rgba(15,157,138,.10);color:var(--brand-ink);border:1px solid rgba(15,157,138,.22)}
+.day-site b{font-size:20px;color:#000}
 .chip-move{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;
   background:var(--req-bg);color:var(--req);border:1px solid #fed7aa;border-radius:999px;padding:1px 8px;margin-left:6px}
 .reco{color:var(--free);font-weight:600}
@@ -438,16 +439,16 @@ const CONFIG = {
   ADMIN_PIN_HASH: "a1fb4e703a9ef1fa4936801721ff285a97ac85330856674412e054892afe6972",
 
   /* --- 4. Tes sites (renomme librement) --- */
-  SITES: ["Resto Nyon Gare", "Resto Gland", "Nyon Drive", "Crèche La Côte"],
+  SITES: ["Gland", "Nyon Centre", "Nyon Drive", "Crèche La Côte"],
 
   /* --- 5b. Site où tu es posté chaque jour (regroupe le travail, évite les trajets) ---
      1=Lundi … 5=Vendredi. Mets ici ta tournée réelle.                                  */
-  BASE_SITE: { 1:"Resto Gland", 2:"Resto Nyon Gare", 3:"Nyon Drive", 4:"Crèche La Côte", 5:"Resto Nyon Gare" },
+  BASE_SITE: { 1:"Gland", 2:"Nyon Centre", 3:"Nyon Drive", 4:"Crèche La Côte", 5:"Nyon Centre" },
 
   /* --- 5b-bis. Directeur(s) de chaque site — le 1er est le principal,
      les suivants sont adjoints / remplaçants (séparés par « , ») ---
      Modifiable dans l'appli : ⚙ Paramètres > Sites.          */
-  DIRECTORS: { "Resto Gland":"Vlad", "Resto Nyon Gare":"Kylian", "Nyon Drive":"Amandine, Kevin", "Crèche La Côte":"Jeremy" },
+  DIRECTORS: { "Gland":"Vlad", "Nyon Centre":"Kylian", "Nyon Drive":"Amandine, Kevin", "Crèche La Côte":"Jeremy" },
 
   /* --- 5. Horaires de travail affichés --- */
   HOURS: { start: 7, end: 16, slotMin: 30, days: 5 }, // 07h→16h, Lun→Ven
