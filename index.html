@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Planning Tech" />
 <meta name="theme-color" content="#1c8f81" />
 <link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
 <title>Planning Technicien — La Côte</title>
 
 <!-- Polices : IBM Plex (registre "atelier / opérations") + IBM Plex Mono pour les horaires -->
@@ -384,7 +386,7 @@ header.app{
   <button class="btn ghost small" id="reportBtn">📄 Rapport</button>
   <button class="btn ghost small" id="myReqBtn">📋 Demandes</button>
   <div class="site-select">
-    <select id="siteFilter" aria-label="Filtrer par site"></select>
+    <!-- filtre site retiré : toujours tous les sites -->
   </div>
   <button class="btn primary small" id="addBtn" style="display:none">+ Intervention</button>
   <button class="btn ghost small" id="settingsBtn" style="display:none">⚙ Paramètres</button>
@@ -679,8 +681,9 @@ const DIRECTOR_FALLBACK = ["Vlad","Kylian","Amandine","Kevin","Jeremy"];
 function dirsOfSite(site){ return String((SETTINGS.directors||{})[site]||"").split(",").map(x=>x.trim()).filter(Boolean); }
 function allDirs(){
   const a=[];
-  SETTINGS.sites.forEach(s=>dirsOfSite(s).forEach(n=>{ if(!a.includes(n)) a.push(n); }));
-  DIRECTOR_FALLBACK.forEach(n=>{ if(!a.includes(n)) a.push(n); });   // garantit tous les noms
+  const has=n=>a.some(x=>x.toLowerCase()===n.toLowerCase());
+  SETTINGS.sites.forEach(s=>dirsOfSite(s).forEach(n=>{ if(!has(n)) a.push(n); }));
+  DIRECTOR_FALLBACK.forEach(n=>{ if(!has(n)) a.push(n); });
   return a;
 }
 function siteOfDir(name){ return SETTINGS.sites.find(s=>dirsOfSite(s).some(n=>n.toLowerCase()===String(name).toLowerCase())); }
@@ -2078,12 +2081,7 @@ async function openAudit(){
 }
 
 /* ================================================================== NAV / UI */
-function bindSiteFilter(){
-  const sel=$("#siteFilter"); if(!sel) return;
-  const cur=sel.value||"__all__";
-  sel.innerHTML=`<option value="__all__">Tous les sites</option>`+SETTINGS.sites.map(s=>`<option>${esc(s)}</option>`).join("");
-  sel.value=[...sel.options].some(o=>o.value===cur)?cur:"__all__";
-}
+function bindSiteFilter(){ State.site="__all__"; }
 function bindMonthPick(){
   const sel=$("#monthPick"); if(!sel) return;
   const now=new Date();
@@ -2116,8 +2114,6 @@ function bindUI(){
   $("#myReqBtn").onclick=openMyRequests;
 
   bindSiteFilter();
-  const sel=$("#siteFilter");
-  sel.onchange=()=>{State.site=sel.value;render();};
 
   $("#btnDirecteur").onclick=()=>{
     if(State.role!=="directeur"){State.role="directeur";toast("Mode directeur");render();}
