@@ -709,6 +709,14 @@ async function load(){
     const created=await materialize(State.weekStart,rows);
     if(created.length) rows=rows.concat(created);
     State.rows=rows;
+    // Charger toutes les demandes en attente (hors semaine affichée)
+    try{
+      if(SB && State.role==="admin"){
+        const {data}=await SB.from("interventions").select("*")
+          .eq("status","requested").order("date",{ascending:true});
+        State.allPending=data||[];
+      } else { State.allPending=[]; }
+    }catch(e2){ State.allPending=[]; }
     render();
   }catch(e){
     console.error(e);
@@ -1065,29 +1073,22 @@ function adminActions(j){
 }
 
 /* -------------------------------------------------------- Boîte de demandes */
-async function renderInbox(){
+function renderInbox(){
   const box=$("#inbox"); box.innerHTML="";
   if(State.role!=="admin") return;
-  // Charge TOUTES les demandes en attente (pas seulement la semaine affichée)
-  let allReqs=[];
-  try{
-    if(SB){
-      const {data}=await SB.from("interventions").select("*")
-        .eq("status","requested").order("date",{ascending:true});
-      allReqs=data||[];
-    } else {
-      allReqs=State.rows.filter(r=>r.status==="requested");
-    }
-  }catch(e){ allReqs=State.rows.filter(r=>r.status==="requested"); }
-  if(!allReqs.length){
-    if(State.role==="admin"){
-      box.innerHTML=`<div style="max-width:1180px;margin:14px auto 0;padding:8px 16px;font-size:13px;color:var(--ink-soft);text-align:center">✅ Aucune demande en attente</div>`;
-    }
+  const reqs=(State.allPending||[]).concat(
+    State.rows.filter(r=>r.status==="requested")
+  );
+  // Dédoublonner par id
+  const seen=new Set(), uniq=[];
+  for(const r of reqs){ if(!seen.has(r.id)){seen.add(r.id);uniq.push(r);} }
+  if(!uniq.length){
+    box.innerHTML=`<div style="max-width:1180px;margin:14px auto 0;padding:8px 16px;font-size:13px;color:var(--ink-soft);text-align:center">✅ Aucune demande en attente</div>`;
     return;
   }
-  const h=el("div","",`<h3 style="max-width:1180px;margin:14px auto 0;padding:0 4px;font-size:15px">📥 Demandes à traiter (${allReqs.length})</h3>`);
+  const h=el("div","",`<h3 style="max-width:1180px;margin:14px auto 0;padding:0 4px;font-size:15px">📥 Demandes à traiter (${uniq.length})</h3>`);
   box.appendChild(h);
-  allReqs.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||a.date.localeCompare(b.date)).forEach(j=>{
+  uniq.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||a.date.localeCompare(b.date)).forEach(j=>{
     const c=el("div","inbox-card"+(j.urgent?" urgent":""));
     const dt=new Date(j.date);
     c.innerHTML=`<h4>${j.urgent?'🚨 ':''}${esc(j.title)}${isOverflow(j)?' <span class="state" style="color:var(--prio)">· à caser</span>':''}</h4>
