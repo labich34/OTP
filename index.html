@@ -624,13 +624,24 @@ function makeStore(){
 
 /* Cette semaine doit-elle recevoir la tâche récurrente ? */
 function recRunsThisWeek(t,ws){
-  if(Number(t.freq)!==2) return true;                    // hebdomadaire
-  if(t.startDate){                                        // nouveau : date de départ
+  const f=Number(t.freq);
+  if(f===4){                                               // mensuel : le jour de la semaine le plus proche du même jour du mois
+    if(!t.startDate) return weekNum(ws)<=1;                 // pas de date → 1ère semaine du mois
+    const sd=new Date(t.startDate), dayOfMonth=sd.getDate();
+    // Chercher si cette semaine (lun→ven) contient le bon jour du mois
+    for(let i=0;i<5;i++){
+      const d=addDays(ws,i);
+      if(d.getDate()===dayOfMonth) return true;
+    }
+    return false;
+  }
+  if(f!==2) return true;                                    // hebdomadaire
+  if(t.startDate){                                          // bimensuel avec date de départ
     const s=mondayOf(new Date(t.startDate));
-    const diff=Math.round((ws-s)/(7*86400000));           // nb de semaines depuis le départ
+    const diff=Math.round((ws-s)/(7*86400000));
     return diff>=0 && diff%2===0;
   }
-  const even=weekNum(ws)%2===0;                           // ancien réglage (parité) : compat
+  const even=weekNum(ws)%2===0;                             // ancien réglage (parité) : compat
   return (t.parity==="odd") ? !even : even;
 }
 
@@ -1621,7 +1632,7 @@ function openSettings(){
   const draft={ sites:SETTINGS.sites.map(name=>({id:nid(),orig:name,name,dir:(SETTINGS.directors||{})[name]||""})), baseSite:{}, recurring:[], rush:{...SETTINGS.rush}, meal:{...SETTINGS.meal}, weeklyHours:SETTINGS.weeklyHours, faultTypes:(SETTINGS.faultTypes||[]).map(t=>({label:t.label||"",dur:t.dur||60})), blockFrom:"", blockTo:"", calM:null, newPin:"" };
   const byName=n=>draft.sites.find(s=>s.name===n);
   for(let w=1;w<=5;w++){ const nm=SETTINGS.baseSite[w]; const m=nm?byName(nm):null; draft.baseSite[w]=m?m.id:""; }
-  draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:Number(r.freq)===2?2:1,parity:r.parity==="odd"?"odd":"even",startDate:r.startDate||""}; });
+  draft.recurring=SETTINGS.recurring.map(r=>{ const m=byName(r.site); return {siteId:m?m.id:"",title:r.title||"",weekday:r.weekday||1,start:r.start||"08:00",end:r.end||"09:00",freq:[1,2,4].includes(Number(r.freq))?Number(r.freq):1,parity:r.parity==="odd"?"odd":"even",startDate:r.startDate||""}; });
   renderSettings(draft);
 }
 
@@ -1658,14 +1669,15 @@ function renderSettings(draft){
         <select class="set-rec-freq" data-i="${i}">
           <option value="1"${r.freq===1?" selected":""}>Chaque semaine</option>
           <option value="2"${r.freq===2?" selected":""}>Toutes les 2 semaines</option>
+          <option value="4"${r.freq===4?" selected":""}>Tous les mois</option>
         </select></div>
-      ${r.freq===2?`<div class="set-row">
+      ${r.freq>=2?`<div class="set-row">
         <label class="set-lbl">1ʳᵉ fois le</label>
         <input class="set-rec-startdate" data-i="${i}" type="date" value="${esc(r.startDate||"")}">
       </div>
       <div class="set-note" style="margin:-2px 0 0">${r.startDate
-        ? `Puis toutes les 2 semaines à partir de cette date.`
-        : `<b>Choisis la date de la première intervention</b> — la tâche se répétera ensuite une semaine sur deux.`}</div>`:``}
+        ? (r.freq===4?`Puis tous les mois, le même jour du mois (${new Date(r.startDate).getDate()}).`:`Puis toutes les 2 semaines à partir de cette date.`)
+        : (r.freq===4?`<b>Choisis la date de la première intervention</b> — la tâche se répétera le même jour chaque mois.`:`<b>Choisis la date de la première intervention</b> — la tâche se répétera ensuite une semaine sur deux.`)}</div>`:``}
     </div>`).join("");
 
   sheet.innerHTML=`
@@ -1691,7 +1703,7 @@ function renderSettings(draft){
     <div class="set-note">Où tu es posté chaque jour (regroupe le travail le matin).</div>
     ${baseHtml}
     <div class="set-h">🔁 Tâches récurrentes</div>
-    <div class="set-note">Choisis un modèle pour pré-remplir objet + durée, puis règle le jour et la fréquence. Pour une tâche <b>toutes les 2 semaines</b>, indique simplement la <b>date de la première intervention</b>. Astuce machine à glace : crée deux tâches — « grosse (3 h) » et « petite (2 h) » — avec des dates de départ décalées d'une semaine.</div>
+    <div class="set-note">Choisis un modèle pour pré-remplir objet + durée, puis règle le jour et la fréquence. Pour une tâche <b>toutes les 2 semaines</b> ou <b>mensuelle</b>, indique la <b>date de la première intervention</b>.</div>
     ${recHtml||`<div class="set-note">Aucune tâche pour l'instant.</div>`}
     <div class="set-row" style="gap:8px">
       <button class="btn small" id="set-add-rec">+ Ajouter une tâche</button>
@@ -1897,7 +1909,7 @@ async function saveSettingsFromDraft(draft){
   const newBase={}; for(let w=1;w<=5;w++){ const id=draft.baseSite[w]; newBase[w]= id&&idToName[id] ? idToName[id] : ""; }
   const newRec=draft.recurring.filter(r=>r.siteId&&idToName[r.siteId]&&r.title.trim())
     .map(r=>({site:idToName[r.siteId],title:r.title.trim(),weekday:+r.weekday,start:r.start,end:r.end,
-      freq:r.freq===2?2:1,parity:r.freq===2?(r.parity==="odd"?"odd":"even"):"even",startDate:r.freq===2?(r.startDate||""):""}));
+      freq:[1,2,4].includes(r.freq)?r.freq:1,parity:r.freq===2?(r.parity==="odd"?"odd":"even"):"even",startDate:r.freq>=2?(r.startDate||""):""}));
 
   SETTINGS.sites=names.slice(); SETTINGS.baseSite=newBase; SETTINGS.recurring=newRec;
   { const dm={}; draft.sites.forEach((s,i)=>{ const dn=(s.dir||"").trim(); if(dn) dm[names[i]]=dn; }); SETTINGS.directors=dm; }
