@@ -701,6 +701,57 @@ async function notifySite(site,title,body,opts){
   await notify(title,body,Object.assign({topic:CONFIG.NTFY_TOPIC+"-"+slug(site)},opts||{}));
 }
 
+/* ---- Rappel 30 min avant (ntfy scheduled delivery) ---- */
+function scheduleReminder(j){
+  if(!CONFIG.NTFY_TOPIC||!j.date||!j.start||isOverflow(j)) return;
+  try{
+    const [h,m]=j.start.split(":").map(Number);
+    const dt=new Date(j.date+"T"+pad(h)+":"+pad(m)+":00");
+    dt.setMinutes(dt.getMinutes()-30);
+    if(dt<=new Date()) return; // déjà passé
+    const ts=Math.floor(dt.getTime()/1000);
+    const appUrl=location.origin+location.pathname;
+    fetch("https://ntfy.sh/"+CONFIG.NTFY_TOPIC,{method:"POST",
+      headers:{"Title":encodeHeader("⏰ Dans 30 min : "+j.title),
+        "Tags":"alarm_clock","Priority":"default","Click":appUrl,
+        "At":String(ts)},
+      body:`${j.site} · ${j.start}–${j.end}`}).catch(()=>{});
+  }catch(e){console.warn("scheduleReminder",e);}
+}
+
+/* ---- Récap hebdo (vendredi ≥16h ou week-end, admin only, via ntfy) ---- */
+async function maybeWeeklyRecap(){
+  if(!CONFIG.NTFY_TOPIC||State.role!=="admin") return;
+  const now=new Date(), day=now.getDay();
+  // Vendredi ≥16h, samedi ou dimanche
+  if(day===5 && now.getHours()<16) return;
+  if(day!==5 && day!==6 && day!==0) return;
+  const mon=mondayOf(now), key="recap_"+iso(mon);
+  if(localStorage.getItem(key)) return; // déjà envoyé cette semaine
+  try{
+    const from=iso(mon), to=iso(addDays(mon,4));
+    let rows=[];
+    if(SB){
+      const {data}=await SB.from("interventions").select("*").gte("date",from).lte("date",to);
+      rows=data||[];
+    } else { rows=State.rows; }
+    const done=rows.filter(r=>r.status==="confirmed"&&r.source!=="rush"&&r.source!=="meal");
+    const refused=rows.filter(r=>r.status==="refused");
+    const pending=rows.filter(r=>r.status==="requested");
+    const totalMin=done.reduce((s,r)=>s+(toMin(r.end)-toMin(r.start)),0);
+    const sites=[...new Set(done.map(r=>r.site))];
+    const body=[
+      `✅ ${done.length} intervention${done.length>1?"s":""} confirmée${done.length>1?"s":""}`,
+      `⏱ ${Math.floor(totalMin/60)}h${pad(totalMin%60)} travaillées`,
+      `📍 ${sites.length} site${sites.length>1?"s":""} : ${sites.join(", ")||"—"}`,
+      refused.length?`❌ ${refused.length} refus`:"",
+      pending.length?`⏳ ${pending.length} en attente`:"",
+    ].filter(Boolean).join("\n");
+    await notify(`📊 Récap semaine ${weekNum(mon)}`,body,{tags:"bar_chart",priority:"low"});
+    localStorage.setItem(key,"1");
+  }catch(e){console.warn("weeklyRecap",e);}
+}
+
 /* =============================================================== CHARGEMENT */
 async function load(){
   const bar=$("#loadbar"); if(bar) bar.classList.add("on");
@@ -1151,6 +1202,8 @@ async function adminAct(act,id){
       await Store.update(id,{status:"confirmed"}); toast("Intervention confirmée");
       await notifySite(j.site,"✅ Demande confirmée — "+j.site,
         `${j.title}\n${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))} ${j.start}–${j.end}`,{tags:"white_check_mark"});
+      // Rappel 30 min avant (ntfy scheduled)
+      scheduleReminder(j);
       await load();
     }
     if(act==="refuse"){
@@ -2121,6 +2174,20 @@ function bindUI(){
   $("#prevWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,-7);load();};
   $("#nextWeek").onclick=()=>{State.weekStart=addDays(State.weekStart,7);load();};
   $("#todayBtn").onclick=()=>{State.weekStart=mondayOf(new Date());load();};
+
+  /* Swipe mobile : gauche/droite = semaine suivante/précédente */
+  {
+    let sx=0,sy=0;
+    const w=$("#week");
+    w.addEventListener("touchstart",e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY;},{passive:true});
+    w.addEventListener("touchend",e=>{
+      const dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy;
+      if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5){
+        if(dx<0){State.weekStart=addDays(State.weekStart,7);load();}
+        else    {State.weekStart=addDays(State.weekStart,-7);load();}
+      }
+    },{passive:true});
+  }
   bindMonthPick();
   $("#monthPick").onchange=e=>{
     const v=e.target.value; if(!v) return;
@@ -2170,6 +2237,7 @@ async function boot(){
   window.addEventListener("offline", ()=>toast("Hors-ligne — les demandes seront mises en file"));
   await load();
   flushOutbox();
+  maybeWeeklyRecap();
 }
 /* Service Worker (PWA / offline) — sans effet si sw.js absent */
 if("serviceWorker" in navigator){
