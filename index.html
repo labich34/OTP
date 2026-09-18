@@ -1058,18 +1058,33 @@ function adminActions(j){
 }
 
 /* -------------------------------------------------------- Boîte de demandes */
-function renderInbox(){
+async function renderInbox(){
   const box=$("#inbox"); box.innerHTML="";
   if(State.role!=="admin") return;
-  const pend=State.rows.filter(r=>r.status==="requested"||(r.status==="confirmed"&&r.priority&&r._fresh));
-  const reqs=State.rows.filter(r=>r.status==="requested");
-  if(!reqs.length) return;
-  const h=el("div","",`<h3 style="max-width:1180px;margin:14px auto 0;padding:0 4px;font-size:15px">📥 Demandes à traiter (${reqs.length})</h3>`);
+  // Charge TOUTES les demandes en attente (pas seulement la semaine affichée)
+  let allReqs=[];
+  try{
+    if(SB){
+      const {data}=await SB.from("interventions").select("*")
+        .eq("status","requested").order("date",{ascending:true});
+      allReqs=data||[];
+    } else {
+      allReqs=State.rows.filter(r=>r.status==="requested");
+    }
+  }catch(e){ allReqs=State.rows.filter(r=>r.status==="requested"); }
+  if(!allReqs.length){
+    if(State.role==="admin"){
+      box.innerHTML=`<div style="max-width:1180px;margin:14px auto 0;padding:8px 16px;font-size:13px;color:var(--ink-soft);text-align:center">✅ Aucune demande en attente</div>`;
+    }
+    return;
+  }
+  const h=el("div","",`<h3 style="max-width:1180px;margin:14px auto 0;padding:0 4px;font-size:15px">📥 Demandes à traiter (${allReqs.length})</h3>`);
   box.appendChild(h);
-  reqs.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)).forEach(j=>{
+  allReqs.sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||a.date.localeCompare(b.date)).forEach(j=>{
     const c=el("div","inbox-card"+(j.urgent?" urgent":""));
+    const dt=new Date(j.date);
     c.innerHTML=`<h4>${j.urgent?'🚨 ':''}${esc(j.title)}${isOverflow(j)?' <span class="state" style="color:var(--prio)">· à caser</span>':''}</h4>
-      <div class="meta">${esc(j.site)} · ${DAYS_FR[new Date(j.date).getDay()]} ${fmtDay(new Date(j.date))}${isOverflow(j)?' · <b>hors planning (journée pleine)</b>':` · ${esc(j.start)}–${esc(j.end)}`}${j.requested_by?` · par ${esc(j.requested_by)}`:''}</div>
+      <div class="meta">${esc(j.site)} · ${DAYS_FR[dt.getDay()]} ${fmtDay(dt)}${isOverflow(j)?' · <b>hors planning (journée pleine)</b>':` · ${esc(j.start)}–${esc(j.end)}`}${j.requested_by?` · par ${esc(j.requested_by)}`:''}</div>
       ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:''}
       ${j.photo_url?`<div class="meta"><a href="${esc(j.photo_url)}" target="_blank" rel="noopener">📷 Voir la photo</a></div>`:''}
       <div class="inbox-actions">
