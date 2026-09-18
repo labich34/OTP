@@ -384,10 +384,6 @@ header.app{
     <select class="month-pick" id="monthPick" aria-label="Aller à un mois de l'année" title="Aller à un mois"></select>
   </div>
   <span class="spacer"></span>
-  <button class="btn ghost small" id="tourBtn">🚗 Tournée</button>
-  <button class="btn ghost small" id="monthBtn">📊 Mois</button>
-  <button class="btn ghost small" id="reportBtn">📄 Rapport</button>
-  <button class="btn ghost small" id="myReqBtn">📋 Demandes</button>
   <div class="site-select">
     <!-- filtre site retiré : toujours tous les sites -->
   </div>
@@ -786,12 +782,40 @@ function visibleRows(){
 
 function dayTimeline(dateStr){
   const open=CONFIG.HOURS.start*60, close=CONFIG.HOURS.end*60;
-  const jobs=visibleRows().filter(r=>r.date===dateStr);
-  const rr=rushRow(dateStr); if(rr) jobs.push(rr);
-  const mr=mealRow(dateStr); if(mr) jobs.push(mr);
-  jobs.sort((a,b)=>toMin(a.start)-toMin(b.start));
+  const realJobs=visibleRows().filter(r=>r.date===dateStr);
+  const rr=rushRow(dateStr), mr=mealRow(dateStr);
+  // Blocs système (repas + rush) qui découpent les interventions
+  const sysBlocks=[];
+  if(mr) sysBlocks.push({s:toMin(mr.start),e:toMin(mr.end)});
+  if(rr) sysBlocks.push({s:toMin(rr.start),e:toMin(rr.end)});
+  sysBlocks.sort((a,b)=>a.s-b.s);
+  // Découper chaque intervention autour des blocs système
+  const split=[];
+  for(const j of realJobs){
+    let segs=[{s:toMin(j.start),e:toMin(j.end)}];
+    for(const blk of sysBlocks){
+      const next=[];
+      for(const sg of segs){
+        if(sg.e<=blk.s||sg.s>=blk.e){ next.push(sg); }
+        else{
+          if(sg.s<blk.s) next.push({s:sg.s,e:blk.s});
+          if(sg.e>blk.e) next.push({s:blk.e,e:sg.e});
+        }
+      }
+      segs=next;
+    }
+    for(const sg of segs){
+      if(sg.e-sg.s<1) continue;
+      split.push({...j, start:toHM(sg.s), end:toHM(sg.e), _realStart:j.start, _realEnd:j.end});
+    }
+  }
+  // Fusionner les parties découpées + blocs système
+  const all=[...split];
+  if(mr) all.push(mr);
+  if(rr) all.push(rr);
+  all.sort((a,b)=>toMin(a.start)-toMin(b.start));
   const items=[]; let cur=open;
-  for(const j of jobs){
+  for(const j of all){
     const s=Math.max(toMin(j.start),open), e=Math.min(toMin(j.end),close);
     if(s>cur) items.push({free:true,start:cur,end:s});
     items.push({free:false,job:j,start:s,end:e});
@@ -996,9 +1020,13 @@ function render(){
     const d=addDays(ws,i), ds=iso(d);
     const card=el("div","day"+(ds===todayStr?" today":""));
     const busyCount=visibleRows().filter(r=>r.date===ds&&r.source!=="free").length;
+    const slots=el("div","slots");
+    const items=dayTimeline(ds);
+    const hasFree=items.some(it=>it.free);
+    const moodEmoji=hasFree?"😎":"🥵";
     card.appendChild(el("div","day-head",
       `<span class="dname">${DAYS_FR[d.getDay()]}</span>
-       <span class="ddate">${fmtDay(d)}</span>
+       <span class="ddate">${fmtDay(d)} ${moodEmoji}</span>
        ${busyCount?`<span class="badge">${busyCount} interv.</span>`:``}`));
     const bSite=baseSiteFor(ds);
     if(bSite) card.appendChild(el("div","day-site",`📍 Site du jour · <b>${esc(bSite)}</b>`));
@@ -1009,9 +1037,6 @@ function render(){
       ctl.querySelector("input").onchange=()=>toggleRushDay(ds);
       card.appendChild(ctl);
     }
-    const slots=el("div","slots");
-    const items=dayTimeline(ds);
-    const hasFree=items.some(it=>it.free);
     if(!items.length){slots.appendChild(el("div","empty-day","Journée complète libre"));}
     let shownMorn=false, shownAftn=false;
     const aftnMin=toMin(SETTINGS.rush?.end||CONFIG.RUSH.end||"13:20");
@@ -1079,21 +1104,24 @@ function jobRow(j){
     if(State.role==="admin") r.querySelector("[data-act]").onclick=e=>{e.stopPropagation();adminAct("del",j.id);};
     return r;
   }
+  const isSplit=j._realStart && (j.start!==j._realStart || j.end!==j._realEnd);
+  const isContinuation=j._realStart && j.start!==j._realStart;
   const bSite=baseSiteFor(j.date);
   const offsite = bSite && j.site!==bSite;
   const r=el("div","row busy "+cls);
   const stateTxt = j.priority?`<span class="state prio">Prioritaire Thibaut</span>`
     : j.status==="requested"?`<span class="state req">Demande en attente</span>`
     : j.status==="confirmed"?`<span class="state confirmed">Confirmé</span>`:``;
+  const splitInfo=isSplit?` <span style="font-size:11px;color:var(--ink-soft)">(${j._realStart}–${j._realEnd})</span>`:"";
   r.innerHTML=`<div class="marker"></div>
     <div class="time mono">${esc(j.start)}<br>${esc(j.end)}</div>
     <div class="body">
-      <div class="title">${esc(j.title)}</div>
+      <div class="title">${isContinuation?"↳ ":""}${esc(j.title)}${splitInfo}</div>
       <div class="meta"><span class="tag site-tag">${esc(j.site)}</span>${j.urgent?`<span class="chip-urgent">🚨 urgent</span>`:``}${stateTxt}</div>
-      ${j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:``}
-      ${j.photo_url?`<div class="meta"><a href="${esc(j.photo_url)}" target="_blank" rel="noopener">📷 Voir la photo</a></div>`:``}
-      ${j.requested_by&&j.source==="adhoc"?`<div class="meta">Demandé par ${esc(j.requested_by)}</div>`:``}
-      ${State.role==="admin"?adminActions(j):``}
+      ${!isContinuation&&j.notes?`<div class="meta">📝 ${esc(j.notes)}</div>`:``}
+      ${!isContinuation&&j.photo_url?`<div class="meta"><a href="${esc(j.photo_url)}" target="_blank" rel="noopener">📷 Voir la photo</a></div>`:``}
+      ${!isContinuation&&j.requested_by&&j.source==="adhoc"?`<div class="meta">Demandé par ${esc(j.requested_by)}</div>`:``}
+      ${State.role==="admin"&&!isContinuation?adminActions(j):``}
     </div>`;
   if(State.role==="admin"){
     r.querySelectorAll("[data-act]").forEach(b=>b.onclick=e=>{
@@ -2200,10 +2228,6 @@ function bindUI(){
   };
   $("#addBtn").onclick=()=>openEdit(null);
   $("#settingsBtn").onclick=openSettings;
-  $("#tourBtn").onclick=()=>openTour();
-  $("#monthBtn").onclick=openHeatmap;
-  $("#reportBtn").onclick=openReport;
-  $("#myReqBtn").onclick=openMyRequests;
 
   bindSiteFilter();
 
