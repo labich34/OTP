@@ -955,9 +955,9 @@ function render(){
     const hasFree=items.some(it=>it.free);
     if(!items.length){slots.appendChild(el("div","empty-day","Journée complète libre"));}
     let shownMorn=false, shownAftn=false;
-    const aftnMin=hm2m(SETTINGS.rush?.end||CONFIG.RUSH.end||"13:20");
+    const aftnMin=toMin(SETTINGS.rush?.end||CONFIG.RUSH.end||"13:20");
     for(const it of items){
-      const t=it.free?it.start:(hm2m(it.job.start));
+      const t=it.free?it.start:(toMin(it.job.start));
       if(!shownMorn){shownMorn=true; slots.appendChild(el("div","period-label","Matin"));}
       if(!shownAftn && t>=aftnMin){shownAftn=true; slots.appendChild(el("div","period-label","Après-midi"));}
       if(it.free) slots.appendChild(freeRow(ds,it));

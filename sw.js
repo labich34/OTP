@@ -1,5 +1,5 @@
 /* Planning Technicien — Service Worker (PWA / offline) */
-const CACHE = "planning-v2";
+const CACHE = "planning-v3";
 const SHELL = [
   "./", "./index.html", "./manifest.json",
   "./icon-512.png", "./icon-192.png", "./icon-180.png",
