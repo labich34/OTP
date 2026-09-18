@@ -158,7 +158,8 @@ header.app{
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
   overflow:hidden;box-shadow:var(--shadow)
 }
-.day.today{border-color:var(--today);box-shadow:0 0 0 2px rgba(217,119,6,.28), var(--shadow)}
+.day.today{border-color:var(--today);box-shadow:0 0 0 2px rgba(217,119,6,.28), var(--shadow);animation:pulse-today 2s ease-in-out infinite}
+@keyframes pulse-today{0%,100%{box-shadow:0 0 0 2px rgba(217,119,6,.28), var(--shadow)}50%{box-shadow:0 0 0 4px rgba(217,119,6,.55), 0 0 12px rgba(217,119,6,.2)}}
 .day-head{
   display:flex;align-items:center;gap:8px;padding:13px 15px;border-bottom:1px solid var(--line);
   background:var(--surface)
@@ -280,6 +281,7 @@ header.app{
 .state.req{color:var(--req)} .state.prio{color:var(--prio)} .state.confirmed{color:var(--confirmed)}
 .admin-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .empty-day{padding:18px 14px;color:var(--ink-soft);font-size:13px;text-align:center}
+.period-label{padding:6px 14px 2px;font-size:11.5px;font-weight:700;color:#222;text-transform:uppercase;letter-spacing:.5px}
 
 /* ---------- Bandeau demandes (admin) ---------- */
 .inbox{max-width:1180px;margin:0 auto;padding:0 16px}
@@ -952,7 +954,12 @@ function render(){
     const items=dayTimeline(ds);
     const hasFree=items.some(it=>it.free);
     if(!items.length){slots.appendChild(el("div","empty-day","Journée complète libre"));}
+    let shownMorn=false, shownAftn=false;
+    const aftnMin=hm2m(SETTINGS.rush?.end||CONFIG.RUSH.end||"13:20");
     for(const it of items){
+      const t=it.free?it.start:(hm2m(it.job.start));
+      if(!shownMorn){shownMorn=true; slots.appendChild(el("div","period-label","Matin"));}
+      if(!shownAftn && t>=aftnMin){shownAftn=true; slots.appendChild(el("div","period-label","Après-midi"));}
       if(it.free) slots.appendChild(freeRow(ds,it));
       else slots.appendChild(jobRow(it.job));
     }
