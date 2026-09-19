@@ -355,6 +355,7 @@ header.app{
 #splash.hide{animation:splashFadeOut .8s ease forwards}
 .splash-img{width:100%;height:100%;object-fit:contain}
 @keyframes splashFadeOut{from{opacity:1}to{opacity:0}}
+body:has(#splash){background:#000!important}
 body:has(#splash) header,body:has(#splash) .toolbar,body:has(#splash) #loadbar,body:has(#splash) #inbox,body:has(#splash) #week,body:has(#splash) .banner,body:has(#splash) #outbox,body:has(#splash) #modal{visibility:hidden}
 </style>
 </head>
