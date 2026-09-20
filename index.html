@@ -1072,18 +1072,29 @@ function render(){
       else slots.appendChild(jobRow(it.job));
     }
     if(!hasFree && items.length){
-      const u=el("div","row urgonly",
-        `<div class="marker"></div>
-         <div class="time mono">Urgence</div>
-         <div class="body"><div class="title">＋ Journée pleine — demande urgente uniquement
-           <button class="info-i" type="button" aria-label="Explication">i</button></div>
-         <div class="meta">Aucun créneau libre. Seule une <b>urgence</b> peut être ajoutée ici.</div></div>`);
-      u.querySelector(".info-i").onclick=e=>{
-        e.stopPropagation();
-        alert("Journée pleine ou bloquée (chantier / congé).\n\nLes demandes normales sont automatiquement reportées au prochain jour disponible.\n\nSi c'est une VRAIE urgence (panne bloquante, sécurité, fuite…), tu peux quand même déposer une demande : elle sera marquée 🚨 Urgent et Thibaut recevra une alerte immédiate pour arbitrer.");
-      };
-      u.onclick=()=>openRequest(ds,openHM(),closeHM(),{urgentOnly:true});
-      slots.appendChild(u);
+      // Vérifier si 3+ jours consécutifs sont pleins → pas d'urgence (appel direct)
+      const fullDays=[];
+      for(let k=0;k<CONFIG.HOURS.days;k++){
+        const kd=iso(addDays(ws,k));
+        const kitems=dayTimeline(kd);
+        fullDays.push(!kitems.some(x=>x.free) && kitems.length>0);
+      }
+      let maxConsec=0,cur2=0;
+      for(const f of fullDays){if(f){cur2++;if(cur2>maxConsec)maxConsec=cur2;}else cur2=0;}
+      if(maxConsec<3){
+        const u=el("div","row urgonly",
+          `<div class="marker"></div>
+           <div class="time mono">Urgence</div>
+           <div class="body"><div class="title">＋ Journée pleine — demande urgente uniquement
+             <button class="info-i" type="button" aria-label="Explication">i</button></div>
+           <div class="meta">Aucun créneau libre. Seule une <b>urgence</b> peut être ajoutée ici.</div></div>`);
+        u.querySelector(".info-i").onclick=e=>{
+          e.stopPropagation();
+          alert("Journée pleine ou bloquée (chantier / congé).\n\nLes demandes normales sont automatiquement reportées au prochain jour disponible.\n\nSi c'est une VRAIE urgence (panne bloquante, sécurité, fuite…), tu peux quand même déposer une demande : elle sera marquée 🚨 Urgent et Thibaut recevra une alerte immédiate pour arbitrer.");
+        };
+        u.onclick=()=>openRequest(ds,openHM(),closeHM(),{urgentOnly:true});
+        slots.appendChild(u);
+      }
     }
     card.appendChild(slots); wrap.appendChild(card);
   }
